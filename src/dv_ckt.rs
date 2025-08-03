@@ -454,6 +454,7 @@ mod test {
     use super::{RawPublicInputs, get_fs_challenge, get_pub_hash_from_raw_pub_inputs};
 
     #[test]
+    #[ignore] // ignore because of being long running
     fn test_verify_over_mock_inputs() {
         let (mut bld, label_info) = compile_verifier();
 

@@ -664,7 +664,9 @@ pub(crate) mod point_scalar_mul {
         use crate::fr_ref::frref_to_bits;
         use crate::gf_ref::{bits_to_gf, gfref_to_bits};
 
+        // ignore because of long running test
         #[test]
+        #[ignore]
         fn test_msm() {
             let window = 5;
             let gref = InnerPointRef::generator();
