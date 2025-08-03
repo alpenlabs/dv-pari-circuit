@@ -1,12 +1,12 @@
 [package]
-name = "alpen-rust-template" # CHANGEME
-version = "0.0.0" # CHANGEME
-edition = "2024" # CHANGEME
+name = "dv-pari-circuit" 
+version = "0.1.0" 
+edition = "2024" 
 authors = [
   "John Doe <noreply@alpenlabs.io>",  # CHANGEME
   "Janet Doe <noreply@alpenlabs.io>", # CHANGEME
 ]
-description = "Alpen Rust Template" # CHANGEME
+description = "Binary circuit generator for DV-Pari verifier" 
 license = "MIT OR Apache-2.0" # CHANGEME
 readme = "README.md"
 repository = "https://github.com/alpenlabs/rust-template" # CHANGEME
@@ -29,8 +29,15 @@ clippy.too_long_first_doc_paragraph = "warn"
 [features]
 
 [dependencies]
+num-bigint = { version = "0.4.4", features = ["rand"] }
+mcircuit = "0.1.10"
+rayon = "1.10.0"
 
 [dev-dependencies]
+xs233-sys = "=0.2.0"
+blake3 = "1.8.2"
+rand = "0.8.5"
+num-traits = "0.2.18"
 
 [profile.release]
 opt-level = "z"   # Optimized for size, use 3 for speed
