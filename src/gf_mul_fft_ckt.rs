@@ -31,7 +31,7 @@ fn extend_domain(rep: &[usize], xs: &[u16]) -> Vec<u16> {
     exts.extend_from_slice(&xs[0..1]);
     for i in 1..xs.len() {
         let mut t = xs[i];
-        let rounds = if rep[i - 1] % 73 == 0 { 3 } else { 9 };
+        let rounds = if rep[i - 1].is_multiple_of(73) { 3 } else { 9 };
         for _ in 0..rounds {
             exts.push(t);
             t = gf9ref_mul(t, t);
@@ -64,7 +64,7 @@ fn extend_evaluation<T: Circuit>(
 
     for i in 1..rep_evs.len() {
         let mut t = rep_evs[i];
-        let rounds = if reps[i - 1] % 73 == 0 { 3 } else { 9 };
+        let rounds = if reps[i - 1].is_multiple_of(73) { 3 } else { 9 };
         for _ in 0..rounds {
             ys.push(t);
             t = emit_gf9_square(bld, t);

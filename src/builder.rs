@@ -523,7 +523,6 @@ impl CktBuilder {
             }
         }
 
-        let w = w.iter().map(|x| x.unwrap()).collect();
-        w
+        w.iter().map(|x| x.unwrap()).collect()
     }
 }
