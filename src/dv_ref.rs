@@ -18,7 +18,7 @@ pub(crate) fn get_fs_challenge(
     srs_bytes: Vec<u8>,
     circuit_info_bytes: Vec<u8>,
 ) -> FrRef {
-    let witness_commitment_hash = { blake3::hash(&commit_p.to_vec()) };
+    let witness_commitment_hash = { blake3::hash(commit_p.as_ref()) };
 
     let public_inputs_hash = {
         let mut buf = Vec::new();
@@ -53,7 +53,7 @@ pub(crate) fn get_fs_challenge(
 
         let out_hash = blake3::hash(&root_bytes);
         let out_hash = out_hash.as_bytes();
-        out_hash.clone()
+        *out_hash
     };
 
     // truncate msb
@@ -75,14 +75,13 @@ pub(crate) fn get_pub_hash_from_raw_pub_inputs(raw_pub_in: &RawPublicInputsRef) 
 
     let inps = raw_pub_in.deposit_index.to_le_bytes().to_vec();
     let out_hash = blake3::hash(&inps);
-    babybear_bytes_to_sect_fr(&out_hash.try_into().unwrap())
+    babybear_bytes_to_sect_fr(&out_hash.into())
 }
 
 fn fr_add(a: &FrRef, b: &FrRef) -> FrRef {
     const MOD_HEX: &str = "8000000000000000000000000000069d5bb915bcd46efb1ad5f173abdf"; // n
     let n = FrRef::from_str_radix(MOD_HEX, 16).unwrap();
-    let ret = (a + b) % n;
-    ret
+    (a + b) % n
 }
 
 fn fr_sub(a: &FrRef, b: &FrRef) -> FrRef {
@@ -91,15 +90,13 @@ fn fr_sub(a: &FrRef, b: &FrRef) -> FrRef {
         16,
     )
     .unwrap();
-    let r_ref = if a >= b { a - b } else { a + &modr - b };
-    r_ref
+    if a >= b { a - b } else { a + &modr - b }
 }
 
 fn fr_mul(a: &FrRef, b: &FrRef) -> FrRef {
     const MOD_HEX: &str = "8000000000000000000000000000069d5bb915bcd46efb1ad5f173abdf"; // n
     let n = FrRef::from_str_radix(MOD_HEX, 16).unwrap();
-    let ret = (a * b) % n;
-    ret
+    (a * b) % n
 }
 
 pub(crate) fn verify(

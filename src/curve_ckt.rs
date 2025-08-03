@@ -341,8 +341,6 @@ mod test {
         let el = st.elapsed();
         println!("emit_point_add took {} seconds to compile ", el.as_secs());
 
-        println!("dump psm bristol");
-
         println!("Emit Pt Add DONE");
         let mut witness = Vec::<bool>::with_capacity(233 * 8);
         witness.extend(gfref_to_bits(&pt.x));

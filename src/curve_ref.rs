@@ -88,8 +88,7 @@ impl CurvePointRef {
             let mut pt2 = xsk233_neutral;
             let success = xs233_sys::xsk233_decode(&mut pt2, src.as_mut_ptr() as *mut c_void);
             assert!(success != 0);
-            let r = Self::from_xsk233_point(&pt2);
-            r
+            Self::from_xsk233_point(&pt2)
         }
     }
 
@@ -101,10 +100,14 @@ impl CurvePointRef {
             let mask58 = (&BigUint::one() << 58) - 1u32;
             let mask59 = (&BigUint::one() << 59) - 1u32;
 
-            let limb0 = (b & &mask58).to_u64().unwrap();
-            let limb1 = (BigUint::from(b >> 58) & &mask58).to_u64().unwrap();
-            let limb2 = (BigUint::from(b >> 116) & &mask58).to_u64().unwrap();
-            let limb3 = (BigUint::from(b >> 174) & &mask59).to_u64().unwrap(); // already ≤ 59 bits
+            let limb0 = b & &mask58;
+            let limb0 = limb0.to_u64().unwrap();
+            let limb1: BigUint = (b >> 58) & &mask58;
+            let limb1 = limb1.to_u64().unwrap();
+            let limb2: BigUint = (b >> 116) & &mask58;
+            let limb2 = limb2.to_u64().unwrap();
+            let limb3: BigUint = (b >> 174) & &mask59;
+            let limb3 = limb3.to_u64().unwrap(); // already ≤ 59 bits
 
             [limb0, limb1, limb2, limb3]
         }
