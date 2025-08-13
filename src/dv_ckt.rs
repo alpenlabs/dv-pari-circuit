@@ -7,9 +7,8 @@ use crate::{
     builder::{Circuit, CktBuilder},
     curve_ckt::{
         CompressedCurvePoint, CompressedCurvePointRef, CurvePoint, emit_point_add,
-        emit_point_equals,
+        emit_point_equals, emit_xsk233_decode,
     },
-    curve_decode_ckt::emit_xsk233_decode,
     curve_scalar_mul_ckt::point_scalar_mul::emit_mul_windowed_tau,
     fr_ckt::{FR_LEN, Fr, emit_fr_add as fr_add, emit_fr_mul as fr_mul, emit_fr_sub as fr_sub},
     fr_ref::{FrRef, frref_to_bits},
@@ -520,8 +519,6 @@ mod test {
         let raw_pub_in = &RawPublicInputs {
             deposit_index: deposit_index_labels,
         };
-        bld.zero();
-        bld.one();
         let out_labels = get_pub_hash_from_raw_pub_inputs(&mut bld, raw_pub_in);
 
         bld.show_gate_counts();

@@ -186,7 +186,7 @@ const LEN: usize = 72;
 const GEN: u8 = 5; // generator of ℤ₇₃×
 //const GEN_INV: u8 = 44; // 5⁻¹ mod 73
 
-/* 1️⃣ build a[] and b[]  -------------------------------------------------- */
+/* build a[] and b[]  -------------------------------------------------- */
 fn build_rader_vectors<T: Circuit>(
     bld: &mut T,
     src: &[W; 73],
@@ -449,8 +449,6 @@ mod test {
                 push_bits(a[i], &mut input_a_wire_labels[i]);
             }
 
-            bld.zero();
-            bld.one();
             let out_bits = poly_mul(&mut bld, &input_a_wire_labels, &b);
             let wires = bld.eval_gates(&witness);
 
@@ -510,8 +508,6 @@ mod test {
             push_bits(evals[i], &mut y_bits[i]);
         }
 
-        bld.zero();
-        bld.one();
         let out_bits = emit_gf9_interpolate_fft(&mut bld, &y_bits);
         /* run the circuit */
         let wires = bld.eval_gates(&witness);

@@ -461,8 +461,6 @@ mod precompute_table {
             println!("table_ref.len {}", tables_ref.len());
 
             let mut bld = CktBuilder::default();
-            bld.zero();
-            bld.one();
             let pt_gen = CurvePoint::generator(&mut bld);
 
             let mut witness = Vec::<bool>::new();
@@ -662,7 +660,7 @@ pub(crate) mod point_scalar_mul {
         use crate::curve_ref::CurvePointRef as InnerPointRef;
         use crate::curve_ref::point_scalar_multiplication;
         use crate::fr_ref::frref_to_bits;
-        use crate::gf_ref::{bits_to_gf, gfref_to_bits};
+        use crate::gf_ref::{bits_to_gfref, gfref_to_bits};
 
         // ignore because of long running test
         #[test]
@@ -735,10 +733,10 @@ pub(crate) mod point_scalar_mul {
             let ckt_t = out_bits.t.map(|id| wires[id]);
 
             let ckt_out = InnerPointRef {
-                x: bits_to_gf(&ckt_x),
-                s: bits_to_gf(&ckt_s),
-                z: bits_to_gf(&ckt_z),
-                t: bits_to_gf(&ckt_t),
+                x: bits_to_gfref(&ckt_x),
+                s: bits_to_gfref(&ckt_s),
+                z: bits_to_gfref(&ckt_z),
+                t: bits_to_gfref(&ckt_t),
             };
 
             assert_eq!(ckt_out, out_ref);

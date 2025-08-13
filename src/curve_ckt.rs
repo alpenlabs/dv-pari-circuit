@@ -1,3 +1,5 @@
+//! Curve Point representation and operations are referenced from xs233-sys library
+
 use std::str::FromStr;
 
 use mcircuit::Operation;
@@ -5,11 +7,14 @@ use num_bigint::BigUint;
 
 use crate::{
     builder::{Circuit, CktBuilder, GateOperation, Template},
-    gf_ckt::{GF_LEN, Gf, emit_gf_add, emit_gf_square},
+    gf_ckt::{
+        GF_LEN, Gf, emit_gf_add, emit_gf_decode, emit_gf_halftrace, emit_gf_inv, emit_gf_is_zero,
+        emit_gf_square, emit_gf_trace,
+    },
     gf_mul_fft_ckt::emit_gf_mul,
 };
 
-/// A point on the xsk233 curve in internal representation
+/// Representation of a point, on the xsk233 curve in projective co-ordinates, as wire labels
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) struct CurvePoint {
     pub x: Gf,
@@ -18,25 +23,20 @@ pub(crate) struct CurvePoint {
     pub t: Gf,
 }
 
+/// Size of a compressed Curve Point is 30 bytes
 pub(crate) const COMPRESSED_POINT_LEN: usize = 30;
+/// Representation of a compressed Curve Point as wire labels
 pub(crate) type CompressedCurvePoint = [[usize; 8]; COMPRESSED_POINT_LEN];
+/// Representation of a compressed curve point as 30 byte array
 pub(crate) type CompressedCurvePointRef = [u8; COMPRESSED_POINT_LEN];
 
+/// Wire labels representing base field element ZERO
 fn gf_zero<T: Circuit>(b: &mut T) -> Gf {
     let z = b.zero();
     [z; GF_LEN]
 }
 
-fn gf_to_bits(n: &BigUint) -> [u8; GF_LEN] {
-    let bytes = n.to_bytes_le();
-    let mut bits = [0u8; GF_LEN];
-    for i in 0..GF_LEN {
-        let byte = if i / 8 < bytes.len() { bytes[i / 8] } else { 0 };
-        bits[i] = (byte >> (i % 8)) & 1;
-    }
-    bits
-}
-
+/// Wire labels representing base field element ONE
 fn gf_one<T: Circuit>(b: &mut T) -> Gf {
     let z = b.zero();
     let o = b.one();
@@ -45,6 +45,7 @@ fn gf_one<T: Circuit>(b: &mut T) -> Gf {
     zs
 }
 
+/// Equality of CurvePoints
 pub(crate) fn emit_point_equals<T: Circuit>(
     bld: &mut T,
     p1: &CurvePoint,
@@ -68,8 +69,6 @@ pub(crate) fn emit_point_equals<T: Circuit>(
 
 impl CurvePoint {
     /// Returns the identity element (point at infinity) of the curve.
-    /// The exact representation depends on the coordinate system.
-    /// For projective coordinates (X, S, Z), it's often (0, 1, 0).
     pub(crate) fn identity<T: Circuit>(bld: &mut T) -> Self {
         CurvePoint {
             x: gf_zero(bld),
@@ -79,7 +78,19 @@ impl CurvePoint {
         }
     }
 
+    /// Generator, actual values referenced from xs233-sys lib
     pub(crate) fn generator<T: Circuit>(bld: &mut T) -> Self {
+        fn gfref_to_bits(n: &BigUint) -> [bool; 233] {
+            let bytes = n.to_bytes_le();
+            let mut bits = [false; 233];
+            for i in 0..233 {
+                let byte = if i / 8 < bytes.len() { bytes[i / 8] } else { 0 };
+                let r = (byte >> (i % 8)) & 1;
+                bits[i] = r != 0;
+            }
+            bits
+        }
+
         let x = BigUint::from_str(
             "13283792768796718556929275469989697816663440403339868882741001477299174",
         )
@@ -94,37 +105,21 @@ impl CurvePoint {
         )
         .unwrap();
 
-        let x = gf_to_bits(&x);
-        let s = gf_to_bits(&s);
-        let z = gf_to_bits(&z);
-        let t = gf_to_bits(&t);
+        let x = gfref_to_bits(&x);
+        let s = gfref_to_bits(&s);
+        let z = gfref_to_bits(&z);
+        let t = gfref_to_bits(&t);
 
-        let x: Vec<usize> = x
-            .iter()
-            .map(|xi| if *xi == 1 { bld.one() } else { bld.zero() })
-            .collect();
-        let s: Vec<usize> = s
-            .iter()
-            .map(|xi| if *xi == 1 { bld.one() } else { bld.zero() })
-            .collect();
-        let z: Vec<usize> = z
-            .iter()
-            .map(|xi| if *xi == 1 { bld.one() } else { bld.zero() })
-            .collect();
-        let t: Vec<usize> = t
-            .iter()
-            .map(|xi| if *xi == 1 { bld.one() } else { bld.zero() })
-            .collect();
+        let x = x.map(|xi| if xi { bld.one() } else { bld.zero() });
+        let s = s.map(|xi| if xi { bld.one() } else { bld.zero() });
+        let z = z.map(|xi| if xi { bld.one() } else { bld.zero() });
+        let t = t.map(|xi| if xi { bld.one() } else { bld.zero() });
 
-        CurvePoint {
-            x: x.try_into().unwrap(),
-            s: s.try_into().unwrap(),
-            z: z.try_into().unwrap(),
-            t: t.try_into().unwrap(),
-        }
+        CurvePoint { x, s, z, t }
     }
 }
 
+/// Add points in curve
 pub(crate) fn emit_point_add<T: Circuit>(
     bld: &mut T,
     p1: &CurvePoint,
@@ -134,9 +129,7 @@ pub(crate) fn emit_point_add<T: Circuit>(
      * x1x2 <- X1*X2
      * s1s2 <- S1*S2
      * z1z2 <- Z1*Z2
-     * (suppressed: t1t2 <- T1*T2)
      * d <- (S1 + T1)*(S2 + T2)
-     * (suppressed: e <- (a^2)*t1t2)
      * f <- x1x2^2
      * g <- z1z2^2
      * X3 <- d + s1s2
@@ -194,6 +187,67 @@ pub(crate) fn emit_point_frob<T: Circuit>(bld: &mut T, p1: &CurvePoint) -> Curve
     }
 }
 
+pub(crate) fn emit_xsk233_decode<T: Circuit>(
+    bld: &mut T,
+    src: &CompressedCurvePoint,
+) -> (CurvePoint, usize) {
+    let (w, ve) = emit_gf_decode(bld, src);
+    let wz = emit_gf_is_zero(bld, w);
+
+    let d = emit_gf_square(bld, &w);
+    let d = emit_gf_add(bld, &d, &w);
+    let d_is_zero = emit_gf_is_zero(bld, d);
+    let one = bld.one();
+    let rp = bld.xor_wire(d_is_zero, one);
+
+    let e = emit_gf_square(bld, &d);
+    let e = emit_gf_inv(bld, e);
+    let etr = emit_gf_trace(bld, &e);
+    let rp_tr = bld.xor_wire(etr, one);
+    let rp = bld.and_wire(rp, rp_tr);
+
+    let f = emit_gf_halftrace(bld, &e);
+
+    let x = emit_gf_mul(bld, &d, &f);
+    let xtr = emit_gf_trace(bld, &x);
+    let rp_tr = bld.xor_wire(xtr, one);
+    let rp = bld.and_wire(rp, rp_tr);
+
+    let g = emit_gf_halftrace(bld, &x);
+
+    let g = emit_gf_add(bld, &g, &w);
+    let g = emit_gf_mul(bld, &g, &x);
+    let g_tr = emit_gf_trace(bld, &g);
+    let masked_a = {
+        let mut tmp = [0; GF_LEN];
+        for i in 0..GF_LEN {
+            tmp[i] = bld.and_wire(x[i], g_tr);
+        }
+        tmp
+    };
+    let x = emit_gf_add(bld, &d, &masked_a);
+
+    let s = emit_gf_square(bld, &w);
+    let s = emit_gf_mul(bld, &s, &x);
+
+    // condset
+    let rp_or_wz = bld.or_wire(rp, wz);
+    let r = bld.and_wire(ve, rp_or_wz);
+
+    let mut one_233 = [bld.zero(); GF_LEN];
+    one_233[0] = one;
+    (
+        CurvePoint {
+            x,
+            s,
+            z: one_233,
+            t: x,
+        },
+        r,
+    )
+}
+
+// Generate Circuit Configuration for Point Addition
 pub(crate) fn template_emit_point_add() -> Template {
     println!("Initializing template_emit_point_add");
     let mut bld = CktBuilder::default();
@@ -212,6 +266,9 @@ pub(crate) fn template_emit_point_add() -> Template {
         z: bld.fresh(),
         t: bld.fresh(),
     };
+    // serialize wire labels in a known order
+    // this same order is respected when these specific wire labels are later referenced
+    // for evaluation or to generate instance of PointAdd Circuit
     let mut input_wires = vec![];
     input_wires.extend_from_slice(&p1.x);
     input_wires.extend_from_slice(&p1.s);
@@ -269,11 +326,16 @@ pub(crate) fn template_emit_point_add() -> Template {
 #[cfg(test)]
 mod test {
 
-    use std::{str::FromStr, time::Instant};
+    use std::{os::raw::c_void, str::FromStr, time::Instant};
 
-    use crate::builder::Circuit;
+    use crate::{
+        builder::Circuit,
+        curve_ckt::{COMPRESSED_POINT_LEN, CompressedCurvePoint, emit_xsk233_decode},
+        gf_ref::bits_to_gfref,
+    };
     use num_bigint::{BigUint, RandomBits};
     use rand::Rng;
+    use xs233_sys::xsk233_generator;
 
     use crate::{
         builder::CktBuilder,
@@ -332,16 +394,12 @@ mod test {
             t: bld.fresh(),
         };
 
-        println!("Emit Pt Add START");
-
         let st = Instant::now();
-        bld.zero();
-        bld.one();
         let c_ptadd = emit_point_add(&mut bld, &c_pt, &c_pt2);
         let el = st.elapsed();
         println!("emit_point_add took {} seconds to compile ", el.as_secs());
+        bld.show_gate_counts();
 
-        println!("Emit Pt Add DONE");
         let mut witness = Vec::<bool>::with_capacity(233 * 8);
         witness.extend(gfref_to_bits(&pt.x));
         witness.extend(gfref_to_bits(&pt.s));
@@ -355,37 +413,10 @@ mod test {
 
         let wires = bld.eval_gates(&witness);
 
-        let c_ptadd_x: BigUint = c_ptadd
-            .x
-            .iter()
-            .enumerate()
-            .fold(BigUint::ZERO, |acc, (i, &w_id)| {
-                acc + (BigUint::from(wires[w_id] as u16) << i)
-            });
-
-        let c_ptadd_s: BigUint = c_ptadd
-            .s
-            .iter()
-            .enumerate()
-            .fold(BigUint::ZERO, |acc, (i, &w_id)| {
-                acc + (BigUint::from(wires[w_id] as u16) << i)
-            });
-
-        let c_ptadd_z: BigUint = c_ptadd
-            .z
-            .iter()
-            .enumerate()
-            .fold(BigUint::ZERO, |acc, (i, &w_id)| {
-                acc + (BigUint::from(wires[w_id] as u16) << i)
-            });
-
-        let c_ptadd_t: BigUint = c_ptadd
-            .t
-            .iter()
-            .enumerate()
-            .fold(BigUint::ZERO, |acc, (i, &w_id)| {
-                acc + (BigUint::from(wires[w_id] as u16) << i)
-            });
+        let c_ptadd_x = bits_to_gfref(&c_ptadd.x.map(|w_id| wires[w_id]));
+        let c_ptadd_s = bits_to_gfref(&c_ptadd.s.map(|w_id| wires[w_id]));
+        let c_ptadd_z = bits_to_gfref(&c_ptadd.z.map(|w_id| wires[w_id]));
+        let c_ptadd_t = bits_to_gfref(&c_ptadd.t.map(|w_id| wires[w_id]));
 
         let c_ptadd_val = InnerPointRef {
             x: c_ptadd_x,
@@ -394,7 +425,56 @@ mod test {
             t: c_ptadd_t,
         };
         assert_eq!(c_ptadd_val, ptadd);
+    }
 
+    #[test]
+    fn test_point_decode_roundtrip() {
+        let mut bld = CktBuilder::default();
+
+        let src = {
+            let mut bytes = Vec::new();
+            for _ in 0..COMPRESSED_POINT_LEN {
+                let byte: [usize; 8] = bld.fresh();
+                bytes.push(byte);
+            }
+            let bytes: CompressedCurvePoint = bytes.try_into().unwrap();
+            bytes
+        };
+        let (c_ptadd, out_ok_label) = emit_xsk233_decode(&mut bld, &src);
+
+        let witness = {
+            unsafe {
+                let pt = xsk233_generator;
+                let mut dst = [0u8; COMPRESSED_POINT_LEN];
+                xs233_sys::xsk233_encode(dst.as_mut_ptr() as *mut c_void, &pt);
+                let mut wit = Vec::new();
+                for d in dst {
+                    let mut vs: Vec<bool> = (0..8).map(|i| (d >> i) & 1 != 0).collect();
+                    wit.append(&mut vs);
+                }
+                wit
+            }
+        };
+
+        let wires = bld.eval_gates(&witness);
+
+        let c_ptadd_x = bits_to_gfref(&c_ptadd.x.map(|w_id| wires[w_id]));
+        let c_ptadd_s = bits_to_gfref(&c_ptadd.s.map(|w_id| wires[w_id]));
+        let c_ptadd_z = bits_to_gfref(&c_ptadd.z.map(|w_id| wires[w_id]));
+        let c_ptadd_t = bits_to_gfref(&c_ptadd.t.map(|w_id| wires[w_id]));
+
+        let c_ptadd_val = InnerPointRef {
+            x: c_ptadd_x,
+            s: c_ptadd_s,
+            z: c_ptadd_z,
+            t: c_ptadd_t,
+        };
+
+        assert_eq!(c_ptadd_val, InnerPointRef::generator());
+
+        let out_label = wires[out_ok_label];
+        println!("out_label {}", out_label);
+        assert!(out_label, "should be 1 for valid input");
         bld.show_gate_counts();
     }
 }

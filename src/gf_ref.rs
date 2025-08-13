@@ -52,7 +52,7 @@ pub(crate) fn gfref_mul(a: &GfRef, b: &GfRef) -> GfRef {
 
     let out = out.map(|x| x != 0);
 
-    bits_to_gf(&out)
+    bits_to_gfref(&out)
 }
 
 /// Convert BigUint → fixed-size 233-bit array (LSB at index 0)
@@ -68,7 +68,7 @@ pub(crate) fn gfref_to_bits(n: &BigUint) -> [bool; 233] {
 }
 
 /// Convert 233-bit array → BigUint (LSB at index 0)
-pub(crate) fn bits_to_gf(bits: &[bool; 233]) -> GfRef {
+pub(crate) fn bits_to_gfref(bits: &[bool; 233]) -> GfRef {
     let mut n = BigUint::zero();
     for (i, &bit) in bits.iter().enumerate() {
         if bit {

@@ -1,4 +1,5 @@
 pub(crate) const GF_LEN: usize = 233;
+/// Representation of a base field element as wire labels
 pub(crate) type Gf = [usize; GF_LEN];
 
 use crate::{builder::Circuit, curve_ckt::CompressedCurvePoint, gf_mul_fft_ckt::emit_gf_mul};
@@ -110,24 +111,22 @@ pub(crate) fn emit_gf_inv<T: Circuit>(bld: &mut T, a: Gf) -> Gf {
     emit_gf_square(bld, &x)
 }
 
-pub(crate) fn emit_gf_decode<T: Circuit>(
-    bld: &mut T,
-    d: &mut Gf,
-    src: &CompressedCurvePoint,
-) -> usize {
+/// Decode base field element and a label that indicates where the field element was valid
+// validity is checked by ensuring bits greater than equal array index - GF_LEN(233) has not been set
+pub(crate) fn emit_gf_decode<T: Circuit>(bld: &mut T, src: &CompressedCurvePoint) -> (Gf, usize) {
     // ---- 1. Copy into a 32-byte buffer (matching the original memset). ----
     let mut buf = [[bld.zero(); 8]; 32];
     buf[..30].copy_from_slice(src);
 
     // Build the BigUint from little-endian bytes.
-    *d = {
+    let dst: Gf = {
         let tmp = buf.as_flattened();
         tmp[0..GF_LEN].try_into().unwrap()
     };
 
     let last = src[29];
 
-    {
+    let valid = {
         let mut tmp = last[1];
         for last_i in last.iter().skip(2) {
             tmp = bld.or_wire(tmp, *last_i);
@@ -135,7 +134,8 @@ pub(crate) fn emit_gf_decode<T: Circuit>(
         let one = bld.one();
 
         bld.xor_wire(tmp, one)
-    }
+    };
+    (dst, valid)
 }
 
 /// interleave zeros:  b_k = a_{k/2}  if k even, else 0
@@ -173,17 +173,29 @@ pub(crate) fn emit_gf_square<T: Circuit>(b: &mut T, a: &Gf) -> Gf {
     out
 }
 
+/// Check if a base field elemnt is zero
+pub(crate) fn emit_gf_is_zero<T: Circuit>(bld: &mut T, w: Gf) -> usize {
+    let mut acc = bld.zero();
+    for x in w {
+        acc = bld.or_wire(acc, x);
+    }
+    let one = bld.one();
+
+    bld.xor_wire(acc, one)
+}
+
 #[cfg(test)]
 mod test {
 
+    use std::os::raw::c_void;
+
     use super::*;
     use crate::builder::CktBuilder;
-    /* ------------------------------------------------------------------ */
-    /*  GF(2²³³) squaring matches scalar reference                         */
-    /* ------------------------------------------------------------------ */
+    use crate::curve_ckt::COMPRESSED_POINT_LEN;
     use crate::gf_ref::{GfRef, gfref_mul};
     use num_traits::FromPrimitive;
     use num_traits::One;
+    use xs233_sys::xsk233_generator;
 
     /// Reverse of `to_u64_digits()`:
     ///   Vec<u64> little-endian → BigUint
@@ -244,5 +256,47 @@ mod test {
             let sw = gfref_mul(&a_big, &a_big);
             assert_eq!(hw, sw, "square mismatch for random a");
         }
+    }
+
+    #[test]
+    fn test_emit_gf_decode() {
+        let mut bld = CktBuilder::default();
+
+        let src = {
+            let mut bytes = Vec::new();
+            for _ in 0..COMPRESSED_POINT_LEN {
+                let byte: [usize; 8] = bld.fresh();
+                bytes.push(byte);
+            }
+            let bytes: CompressedCurvePoint = bytes.try_into().unwrap();
+            bytes
+        };
+
+        let (_, valid_label) = emit_gf_decode(&mut bld, &src);
+
+        // witness
+        let mut witness = {
+            unsafe {
+                let pt = xsk233_generator;
+                let mut dst = [0u8; COMPRESSED_POINT_LEN];
+                xs233_sys::xsk233_encode(dst.as_mut_ptr() as *mut c_void, &pt);
+                let mut wit = Vec::new();
+                for d in dst {
+                    let mut vs: Vec<bool> = (0..8).map(|i| (d >> i) & 1 != 0).collect();
+                    wit.append(&mut vs);
+                }
+                wit
+            }
+        };
+        let wires = bld.eval_gates(&witness);
+        let valid = wires[valid_label];
+        assert!(valid);
+
+        // bit higher than 233 if set is not a valid field element as it is not within bounds
+        // in such cases, `valid_label` emits false
+        witness[GF_LEN] = true;
+        let wires = bld.eval_gates(&witness);
+        let valid = wires[valid_label];
+        assert!(!valid);
     }
 }

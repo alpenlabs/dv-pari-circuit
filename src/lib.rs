@@ -5,7 +5,6 @@ pub(crate) mod blake3_ckt;
 pub(crate) mod builder;
 
 pub(crate) mod curve_ckt;
-pub(crate) mod curve_decode_ckt;
 pub(crate) mod curve_ref;
 pub(crate) mod curve_scalar_mul_ckt;
 

@@ -1,7 +1,17 @@
-use crate::builder::{Circuit, add_shifted, finish_bits, xor_many, xor_three, xor_vec};
+use crate::builder::{Circuit, xor_many, xor_three, xor_vec};
 
 pub(crate) const GF9_LEN: usize = 9;
 pub(crate) type GF9 = [usize; GF9_LEN];
+
+fn add_shifted<T: Circuit>(b: &mut T, dst: &mut [Option<usize>], shift: usize, src: &[usize]) {
+    for (i, &w) in src.iter().enumerate() {
+        let idx = i + shift;
+        dst[idx] = match dst[idx] {
+            None => Some(w),
+            Some(prev) => Some(b.xor_wire(prev, w)),
+        };
+    }
+}
 
 /* ──────────────────  GF(2⁹)  ·  squaring (XOR-only)  ─────────────────── */
 /*
@@ -149,16 +159,17 @@ pub(crate) fn emit_gf9_mul<T: Circuit>(bld: &mut T, a: GF9, c: GF9) -> GF9 {
     let c3 = xor_vec(bld, &f2, &m2);
 
     /* 4 · assemble 18-bit raw product */
-    let mut tmp = vec![None; 18];
+    let mut tmp = [None; 17];
     add_shifted(bld, &mut tmp, 0, &c0); // c0
     add_shifted(bld, &mut tmp, 3, &c1); // c1 << 3
     add_shifted(bld, &mut tmp, 6, &c2); // c2 << 6
     add_shifted(bld, &mut tmp, 9, &c3); // c3 << 9
     add_shifted(bld, &mut tmp, 12, &c4); // c4 << 12
-    let prod18: [usize; 18] = finish_bits(bld, tmp).try_into().unwrap();
+
+    let prod18: [usize; 17] = tmp.map(|x| x.unwrap());
 
     /* 5 · reduce modulo x⁹+x⁴+1 */
-    reduce17_to9(bld, prod18[0..17].try_into().unwrap())
+    reduce17_to9(bld, prod18)
 }
 
 #[cfg(test)]

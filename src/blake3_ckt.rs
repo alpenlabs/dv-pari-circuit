@@ -1,3 +1,8 @@
+//! Binary Circuit Representation of Blake3 Hasher
+//! Implementation directly referenced from official BLAKE3 reference implementation rust code
+//! We only support inputs that fit in a single chunk (1024 bytes) because this is sufficient for our use case (64 bytes input).
+//! Therefore implementation related to "chunks" has been omitted from reference implementation above.
+
 use core::cmp::min;
 
 use crate::builder::Circuit;
@@ -386,18 +391,20 @@ mod test {
 
     #[test]
     fn test_emit_blake3_hash() {
+        // Circuit verified for different inputs of known length
+
         let mut bld = CktBuilder::default();
 
         // Calculate Reference Hash using extern blake3 crate
         let mut hasher = RefHasher::new();
-        let input1 = b"abcd";
+        let input1 = b"fbcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"; // 64 byte input
         let bool_abc = str_to_bits_le(input1);
         hasher.update(input1);
         let ref_out = hasher.finalize();
         let ref_out_slice1 = ref_out.as_bytes();
 
         let mut hasher = RefHasher::new();
-        let input2 = b"ef02";
+        let input2 = b"ef02ef02ef03ef02ef02ef02ef04ef02ef02ef02ef02ef0aef02ef02ef02ef02";
         let bool_ef = str_to_bits_le(input2);
         hasher.update(input2);
         let ref_out = hasher.finalize();
@@ -421,6 +428,8 @@ mod test {
         hasher.update(&mut bld, &input_labels);
         let mut out_slice = [[0; 8]; 32];
         hasher.finalize(&mut bld, &mut out_slice);
+
+        bld.show_gate_counts();
 
         // Evaluate the circuit and input 1 and compare corresponding result
         let wires = bld.eval_gates(&bool_abc.concat());
@@ -449,7 +458,5 @@ mod test {
         }
 
         assert_eq!(hws, ref_out_slice2.to_vec());
-
-        // Circuit verified for different inputs of known length
     }
 }

@@ -135,7 +135,7 @@ mod tests {
 
     use crate::{
         builder::CktBuilder,
-        gf_ref::{gfref_mul, gfref_to_bits},
+        gf_ref::{bits_to_gfref, gfref_mul, gfref_to_bits},
     };
 
     use super::*;
@@ -166,12 +166,8 @@ mod tests {
 
         let wires = bld.eval_gates(&witness);
 
-        let hw: BigUint = out_bits
-            .iter()
-            .enumerate()
-            .fold(BigUint::ZERO, |acc, (i, &w_id)| {
-                acc + (BigUint::from(wires[w_id] as u16) << i)
-            });
+        let hw = bits_to_gfref(&out_bits.map(|w_id| wires[w_id]));
+
         let chw = gfref_mul(&BigUint::from(a), &BigUint::from(b));
         bld.show_gate_counts();
         assert_eq!(hw, chw);
@@ -195,12 +191,8 @@ mod tests {
         assert_eq!(witness.len(), 233 * 2);
         let wires = bld.eval_gates(&witness);
 
-        let hw: BigUint = out_bits
-            .iter()
-            .enumerate()
-            .fold(BigUint::ZERO, |acc, (i, &w_id)| {
-                acc + (BigUint::from(wires[w_id] as u16) << i)
-            });
+        let hw = bits_to_gfref(&out_bits.map(|w_id| wires[w_id]));
+
         let chw = gfref_mul(&a, &b);
         assert_eq!(hw, chw);
 
