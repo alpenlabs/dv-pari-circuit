@@ -1,4 +1,4 @@
-//! dv_ckt.rs
+//! Binary circuit implementation of DV Verifier Program
 //!
 use std::str::FromStr;
 
@@ -10,7 +10,10 @@ use crate::{
         emit_point_equals, emit_xsk233_decode,
     },
     curve_scalar_mul_ckt::point_scalar_mul::emit_mul_windowed_tau,
-    fr_ckt::{FR_LEN, Fr, emit_fr_add as fr_add, emit_fr_mul as fr_mul, emit_fr_sub as fr_sub},
+    fr_ckt::{
+        FR_LEN, Fr, const_mod_n, emit_fr_add as fr_add, emit_fr_mul as fr_mul,
+        emit_fr_sub as fr_sub, ge_unsigned,
+    },
     fr_ref::{FrRef, frref_to_bits},
 };
 
@@ -46,7 +49,8 @@ const TRAPDOOR_BIT_LEN: usize = 696;
 
 impl ProofRef {
     // (2 * 30 + 2 * 29)*8 = 944
-    fn to_bits(&self) -> [bool; PROOF_BIT_LEN] {
+    /// Serialize ProofRef
+    pub fn to_bits(&self) -> [bool; PROOF_BIT_LEN] {
         let mut commit_p: Vec<bool> = self
             .commit_p
             .iter()
@@ -81,7 +85,8 @@ pub struct RawPublicInputsRef {
 
 impl RawPublicInputsRef {
     // deposit_index is 64 bits
-    fn to_bits(&self) -> [bool; PUBINP_BIT_LEN] {
+    /// Serialize RawPublicInputsRef
+    pub fn to_bits(&self) -> [bool; PUBINP_BIT_LEN] {
         let deposit_index = u64_to_bits_le(self.deposit_index).to_vec();
         let deposit_index: [bool; 64] = deposit_index.try_into().unwrap();
         deposit_index
@@ -100,7 +105,8 @@ pub struct TrapdoorRef {
 }
 
 impl TrapdoorRef {
-    fn to_bits(&self) -> [bool; TRAPDOOR_BIT_LEN] {
+    /// Serialize TrapdoorRef
+    pub fn to_bits(&self) -> [bool; TRAPDOOR_BIT_LEN] {
         let mut tau = frref_to_bits(&self.tau).to_vec();
         let mut delta = frref_to_bits(&self.delta).to_vec();
         let mut epsilon = frref_to_bits(&self.epsilon).to_vec();
@@ -168,7 +174,7 @@ impl VerifierPayloadRef {
         (proof, rpin, secrets)
     }
 
-    /// to_bits
+    /// Serialize VerifierPayloadRef
     pub fn to_bits(&self) -> [bool; PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN] {
         let mut secret_bits = self.trapdoor.to_bits().to_vec();
         let mut deposit_index_bits = self.public_input.to_bits().to_vec();
@@ -316,6 +322,7 @@ fn get_fs_challenge<T: Circuit>(
     root_fr
 }
 
+/// Convert raw public inputs into scalar field element as done by SP1
 fn get_pub_hash_from_raw_pub_inputs<T: Circuit>(bld: &mut T, raw_pub_in: &RawPublicInputs) -> Fr {
     let inps: Vec<[usize; 8]> = raw_pub_in
         .deposit_index
@@ -331,7 +338,7 @@ fn get_pub_hash_from_raw_pub_inputs<T: Circuit>(bld: &mut T, raw_pub_in: &RawPub
     out_hash.reverse();
 
     let out_hash_flat: Vec<usize> = out_hash.into_iter().flatten().collect();
-    let out_fr: Fr = out_hash_flat[0..232].try_into().unwrap();
+    let out_fr: Fr = out_hash_flat[0..FR_LEN].try_into().unwrap();
     out_fr
 }
 
@@ -378,8 +385,19 @@ pub(crate) fn verify<T: Circuit>(
     raw_public_inputs: RawPublicInputs,
     secrets: Trapdoor,
 ) -> usize {
-    let (proof_commit_p, _ok) = emit_xsk233_decode(bld, &proof.commit_p);
-    let (proof_kzg_k, _ok) = emit_xsk233_decode(bld, &proof.kzg_k);
+    let (proof_commit_p, decode_proof_commit_p_success) = emit_xsk233_decode(bld, &proof.commit_p);
+    let (proof_kzg_k, decode_proof_kzg_k_success) = emit_xsk233_decode(bld, &proof.kzg_k);
+
+    let is_input_valid = {
+        let one_wire = bld.one();
+        let fr_modulus = const_mod_n(bld);
+        let proof_a0_invalid = ge_unsigned(bld, &proof.a0, &fr_modulus); // a0 should be less than modulus
+        let proof_b0_invalid = ge_unsigned(bld, &proof.b0, &fr_modulus);
+        let proof_scalars_invalid = bld.or_wire(proof_a0_invalid, proof_b0_invalid); // either invalid
+        let proof_scalars_valid = bld.xor_wire(proof_scalars_invalid, one_wire); // both scalars valid
+        let is_pts_valid = bld.and_wire(decode_proof_commit_p_success, decode_proof_kzg_k_success); // pts valid
+        bld.and_wire(proof_scalars_valid, is_pts_valid) // points and scalars valid
+    };
 
     let public_inputs_1 = get_pub_hash_from_raw_pub_inputs(bld, &raw_public_inputs);
     let public_inputs_0_vk_const = {
@@ -430,7 +448,9 @@ pub(crate) fn verify<T: Circuit>(
     let lhs = emit_point_add(bld, &v0_k, &u0_g);
     let rhs: CurvePoint = proof_commit_p;
 
-    emit_point_equals(bld, &lhs, &rhs)
+    let verify_success = emit_point_equals(bld, &lhs, &rhs);
+
+    bld.and_wire(verify_success, is_input_valid)
 }
 
 #[cfg(test)]
@@ -509,6 +529,66 @@ mod test {
         println!("label_info {:?}", label_info);
         let passed_val = evaluate_verifier(&mut bld, witness, label_info.output_label);
         assert!(passed_val, "verification failed");
+    }
+
+    #[test]
+    #[ignore] // ignore because of being long running
+    fn test_invalid_proof_over_mock_inputs() {
+        let (mut bld, label_info) = compile_verifier();
+
+        // Prepare VerifierPayloadRef
+        let tau: FrRef = BigUint::from_str(
+            "490782060457092443021184404188169115419401325819878347174959236155604",
+        )
+        .unwrap();
+        let delta = BigUint::from_str(
+            "409859792668509615016679153954612494269657711226760893245268993658466",
+        )
+        .unwrap();
+        let epsilon = BigUint::from_str(
+            "2880039972651592580549544494658966441531834740391411845954153637005104",
+        )
+        .unwrap();
+        let deposit_index = u64::from_le_bytes([55, 0, 0, 0, 89, 0, 0, 0]);
+        let commit_p: [u8; 30] = [
+            133, 140, 174, 216, 133, 225, 204, 198, 28, 251, 177, 220, 155, 127, 219, 87, 180, 12,
+            201, 203, 10, 80, 114, 242, 169, 218, 209, 206, 188,
+            7, // MSB changed from 1 to 7 to make verification fail
+        ];
+        let kzg_k: [u8; 30] = [
+            83, 51, 213, 61, 27, 119, 141, 73, 215, 153, 39, 56, 54, 185, 69, 227, 199, 27, 19,
+            192, 158, 177, 113, 83, 160, 140, 230, 78, 199, 1,
+        ];
+        let a0 = BigUint::from_str(
+            "2604010200365131987507248063377225157436123957921527605558736209771436",
+        )
+        .unwrap();
+        let b0 = BigUint::from_str(
+            "2636431303166467851697193033282860644113581188362576204586903464948123",
+        )
+        .unwrap();
+
+        let verifier_payload: VerifierPayloadRef = VerifierPayloadRef {
+            proof: ProofRef {
+                commit_p,
+                kzg_k,
+                a0,
+                b0,
+            },
+            public_input: RawPublicInputsRef { deposit_index },
+            trapdoor: TrapdoorRef {
+                tau,
+                delta,
+                epsilon,
+            },
+        };
+        let witness = verifier_payload.to_bits();
+
+        bld.show_gate_counts();
+
+        println!("label_info {:?}", label_info);
+        let passed_val = evaluate_verifier(&mut bld, witness, label_info.output_label);
+        assert!(!passed_val, "verification should have failed but passed");
     }
 
     #[test]

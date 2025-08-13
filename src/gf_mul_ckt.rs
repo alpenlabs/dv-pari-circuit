@@ -30,7 +30,7 @@ fn representatives() -> Vec<usize> {
 
 fn extend_domain(rep: &[usize], xs: &[u16]) -> Vec<u16> {
     let mut exts = Vec::with_capacity(511);
-    assert_eq!(rep.len()+1, xs.len());
+    assert_eq!(rep.len() + 1, xs.len());
     assert_eq!(xs[0], 1); //G^0 -> G^0 is the only point in its orbit, treating it separately
     exts.push(1);
     for i in 1..xs.len() {
@@ -80,13 +80,13 @@ fn extend_evaluation<T: Circuit>(
 }
 
 /// Base field multiplication using an FFT-like approach.
-/// 
+///
 /// FFT MULTIPLICATION:
 /// We select a handful of important points called `representatives` to evaluate each of the polynomial inputs `a` and `b`.
 /// We then multiply their respective evaluations and then extend this evaluation to the full domain
 /// Finally we interpolate the full set of evaluations into a polynomial
 /// This polynomial is reduced to fit within the base field and returned as result
-/// 
+///
 /// SELCECTING_DOMAIN:
 /// Since the product of two polynomials in GF(2^233) is a 465 degree polynomial, we need > 465 evaluation points.
 /// These evaluation points (domain) can be chosen from GF(2^9). The "orbit" property comes from this binary field.

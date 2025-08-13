@@ -86,13 +86,13 @@ impl CurvePointRef {
     }
 
     /// Decode from byte representation of compressed curve point
-    pub(crate) fn from_compressed_point(src: &CompressedCurvePointRef) -> Self {
+    pub(crate) fn from_compressed_point(src: &CompressedCurvePointRef) -> (Self, bool) {
         unsafe {
             let mut src = *src;
             let mut pt2 = xsk233_neutral;
             let success = xs233_sys::xsk233_decode(&mut pt2, src.as_mut_ptr() as *mut c_void);
-            assert!(success != 0);
-            Self::from_xsk233_point(&pt2)
+            let pt_ref = Self::from_xsk233_point(&pt2);
+            (pt_ref, success != 0)
         }
     }
 

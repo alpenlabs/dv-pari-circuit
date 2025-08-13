@@ -21,7 +21,7 @@ const TAU_ADIC_LEN: usize = 470;
 /// The element c_0 + c_1 τ is divisible by τ if and only if c_0 is even. If it is divisble by τ, remainder is 0, else 1.
 /// So LSB of c_0 gives the remainder, which is collected to get the output.
 /// Rule for division: (c_0 + c_1 τ) / τ = (c1 - c0/2) + (-c_0/2) τ
-/// 
+///
 /// With tau adic representation, you can substitute point doubling in double-and-add algorithm with squaring operation,
 /// which is linear and only uses XOR gates
 mod tau_adic_repr {

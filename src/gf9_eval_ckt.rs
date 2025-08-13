@@ -1,5 +1,5 @@
 //! Module to evaluate polynomial in GF(2^233) at sample points in GF(2^9)
-//! 
+//!
 /* bits are numbered a₀ (LSB) … a₈ (MSB)                                           */
 fn matrix_multiply(a: [[u8; 9]; 9], b: [[u8; 9]; 9]) -> [[u8; 9]; 9] {
     // Initialize a new 9x9 result matrix with all zeros.
@@ -74,8 +74,8 @@ fn compute_transformation_matrix(const_c: Gf9Ref) -> [[u8; 9]; 9] {
 // The function that builds the actual circuit
 pub(crate) fn emit_mul_by_const<T: Circuit>(
     b: &mut T,
-    word_bits: GF9, /* secret  a */
-    const_c: Gf9Ref,   /* PUBLIC  C */
+    word_bits: GF9,  /* secret  a */
+    const_c: Gf9Ref, /* PUBLIC  C */
 ) -> GF9 {
     // This matrix M is pre-computed and stored as a constant
     let m = compute_transformation_matrix(const_c);
@@ -120,7 +120,10 @@ fn xor_many<T: Circuit>(b: &mut T, wires: &[usize]) -> usize {
 /* PUBLIC 9-bit constants.  Result for each point is 9 secret wires.      */
 
 use crate::{
-    builder::Circuit, gf9_ckt::{GF9, GF9_LEN}, gf9_ref::Gf9Ref, gf_ckt::Gf
+    builder::Circuit,
+    gf_ckt::Gf,
+    gf9_ckt::{GF9, GF9_LEN},
+    gf9_ref::Gf9Ref,
 };
 
 /* 9 zero-wires helper --------------------------------------------------- */
@@ -132,7 +135,7 @@ fn zero_9<T: Circuit>(b: &mut T) -> GF9 {
 /* Horner evaluation for ONE public sample point ------------------------ */
 fn emit_poly_eval_fixed<T: Circuit>(
     b: &mut T,
-    coeff_bits: &Gf,   /* secret coeffs, bit-LSB order  a₀…a₂₃₂ */
+    coeff_bits: &Gf,      /* secret coeffs, bit-LSB order  a₀…a₂₃₂ */
     sample_const: Gf9Ref, /* PUBLIC sample point           ( <512 )*/
 ) -> GF9 {
     /* acc starts at 0 */
@@ -169,7 +172,10 @@ mod test {
     use crate::{builder::CktBuilder, gf_ckt::Gf, gf9_ref::gf9ref_mul};
 
     /// Reference Function: Evaluate a 233-bit polynomial (bit vector) at all x in `xs`
-    pub(crate) fn ref_evaluate_poly_at_fixed_gf9(polynom: &[u8; 233], domain: &[Gf9Ref]) -> Vec<Gf9Ref> {
+    pub(crate) fn ref_evaluate_poly_at_fixed_gf9(
+        polynom: &[u8; 233],
+        domain: &[Gf9Ref],
+    ) -> Vec<Gf9Ref> {
         use crate::gf9_ref::gf9ref_mul;
 
         let mut evals = Vec::with_capacity(domain.len());

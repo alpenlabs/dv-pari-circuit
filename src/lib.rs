@@ -1,4 +1,5 @@
-//! lib.rs
+//! Circuit (_ckt) and Reference (_ref) Implementation for DV Verifier.
+//! Reference implementation primarily serves to verify the correctness of respective circuit based implementations
 //!
 pub(crate) mod blake3_ckt;
 

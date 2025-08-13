@@ -1,3 +1,11 @@
+//! Interpolate evaluations at point in GF(2^9) to obtain a polynomial that represents result of base field multiplication in GF(2^233)
+//!
+//! DISCLAIMER:
+//! A much better approach would have been to use Binary IFFT directly e.g. "Frobenius Additive Fast Fourier Transform - Wen-Ding Li"
+//! but this seems to be limited to fields of powers of 2 i.e. GF(2^{2^m}) for m=0,1,.., which GF(2^9) doesn't meet.
+//! For now (this prototype code), we make do with the following less clean implementation for interpolation.
+//! Tracking git issue #5
+
 use crate::builder::{Circuit, xor_many};
 use crate::gf_ckt::Gf;
 use crate::gf9_eval_ckt::emit_mul_by_const;
@@ -125,9 +133,7 @@ pub(crate) fn gf9_interpolate_inverse_fft<T: Circuit>(bld: &mut T, y: &[W; N]) -
     c_mut
 }
 
-// ---------------------------------------------------------------------------
-//  Public API – interpolate from full evaluation vector to 233‑bit element
-// ---------------------------------------------------------------------------
+// Interpolate from full evaluation vector to 233‑bit element
 #[allow(non_snake_case)]
 pub(crate) fn emit_gf9_interpolate_fft<T: Circuit>(bld: &mut T, Y: &[W; N]) -> Gf {
     let coeffs = gf9_interpolate_inverse_fft(bld, Y);
@@ -191,19 +197,6 @@ fn build_rader_vectors<T: Circuit>(
         seq = ((seq as u16 * GEN as u16) % 73) as u8; // ALWAYS +GEN
     }
     (a, b, x0, sum_all)
-}
-
-/* 2️⃣ naive length-72 cyclic convolution ---------------------------------- */
-fn _cyclic_convolve_72(a: &[u16; LEN], b: &[u16; LEN]) -> [u16; LEN] {
-    let mut c = [0u16; LEN];
-    for s in 0..LEN {
-        let mut acc = 0u16;
-        for m in 0..LEN {
-            acc ^= gf9ref_mul(a[m], b[(s + m) % LEN]);
-        }
-        c[s] = acc;
-    }
-    c
 }
 
 /// The size at which the recursive Karatsuba multiplication will stop
@@ -342,7 +335,7 @@ pub(crate) fn cyclic_cross_correlation_72_karatsuba<T: Circuit>(
     cyclic_convolve_72_karatsuba(bld, &a_rev, b)
 }
 
-/* 3️⃣ assemble outputs ---------------------------------------------------- */
+/* 3 assemble outputs ---------------------------------------------------- */
 fn assemble_rader_out<T: Circuit>(bld: &mut T, x0: W, c: &[W; LEN]) -> [W; 73] {
     let mut out = [[bld.zero(); 9]; 73];
     //out[0] = [0;9];                // placeholder, caller fills DC

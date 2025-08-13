@@ -73,7 +73,7 @@ fn full_add<T: Circuit>(b: &mut T, a: usize, b_: usize, cin: usize) -> (usize, u
 
 // ───────────────────  a ≥ b   (one wire, MSB first)  ─────────────────────
 //  Gate cost: 4·W XOR + 3·W AND
-fn ge_unsigned<T: Circuit>(b: &mut T, a: &[usize], c: &[usize]) -> usize {
+pub(crate) fn ge_unsigned<T: Circuit>(b: &mut T, a: &[usize], c: &[usize]) -> usize {
     let w = a.len();
     let mut gt = b.zero();
     let mut eq = b.one();
@@ -172,10 +172,8 @@ pub(crate) fn mul_school<T: Circuit>(bld: &mut T, a: &Bits, b: &Bits) -> Bits {
 
     // 4. final carry‑propagate once
 
-    let ret = add_unsigned(bld, &row0, &row1);
-    ret
+    add_unsigned(bld, &row0, &row1)
 }
-
 
 pub(crate) fn mul_kara_rec<T: Circuit>(bld: &mut T, a: &Bits, b: &Bits) -> Bits {
     if a.len() <= THRESH || b.len() <= THRESH {
@@ -183,7 +181,7 @@ pub(crate) fn mul_kara_rec<T: Circuit>(bld: &mut T, a: &Bits, b: &Bits) -> Bits 
     }
     let n = a.len().max(b.len());
     let m = n / 2; // split position
-    
+
     // split a and b
     let a0: Bits = a[..m].to_vec();
     let a1: Bits = a[m..].to_vec();
@@ -264,7 +262,7 @@ pub(crate) fn emit_mul_const_c_csa<T: Circuit>(b: &mut T, t: &[usize]) -> Vec<us
             let global_shift = shift + bit as usize; // (t << bit) << shift
             for (i, &w) in t.iter().enumerate() {
                 let bucket = if neg { &mut cols_neg } else { &mut cols_pos };
-                bucket[i + global_shift].push(w); 
+                bucket[i + global_shift].push(w);
             }
         }
     }
@@ -322,12 +320,11 @@ pub(crate) fn emit_mul_const_c_csa<T: Circuit>(b: &mut T, t: &[usize]) -> Vec<us
     let pos_pad = pad_to(b, pos, len);
     let neg_pad = pad_to(b, neg, len);
 
-    let diff = sub_unsigned(b, &pos_pad, &neg_pad); // 3 AND/bit once
-    diff
+    sub_unsigned(b, &pos_pad, &neg_pad) // 3 AND/bit once
 }
 
 /// little-endian bit vector of the modulus  n
-fn const_mod_n<T: Circuit>(b: &mut T) -> Vec<usize> {
+pub(crate) fn const_mod_n<T: Circuit>(b: &mut T) -> Vec<usize> {
     const MOD_HEX: &str = "08000000000000000000000000000069d5bb915bcd46efb1ad5f173abdf";
     let mut out = Vec::<usize>::new();
     for ch in MOD_HEX.chars().rev() {
@@ -341,10 +338,7 @@ fn const_mod_n<T: Circuit>(b: &mut T) -> Vec<usize> {
     out
 }
 
-pub(crate) fn emit_reduce_pseudo_mersenne<T: Circuit>(
-    b: &mut T,
-    prod: &[usize], 
-) -> Vec<usize> {
+pub(crate) fn emit_reduce_pseudo_mersenne<T: Circuit>(b: &mut T, prod: &[usize]) -> Vec<usize> {
     /* base case: prod < 2²³¹  → already <  n  */
     if prod.len() <= REDUCTION_SPLIT {
         return prod.to_vec(); // just wires, no gates
@@ -471,8 +465,8 @@ mod tests {
 
         for i in 0..100 {
             let mut rng = rand::thread_rng();
-            let a_bi: BigUint = rng.sample(RandomBits::new((i+1) * 2));
-            let b_bi: BigUint = rng.sample(RandomBits::new((i+1) * 2));
+            let a_bi: BigUint = rng.sample(RandomBits::new((i + 1) * 2));
+            let b_bi: BigUint = rng.sample(RandomBits::new((i + 1) * 2));
 
             let n = BigUint::from_str_radix(MOD_HEX, 16).unwrap();
             let ref_r = (&a_bi * &b_bi) % n;
@@ -502,8 +496,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         for i in 0..300 {
-            let a_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
-            let b_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
+            let a_bi: BigUint = rng.sample(RandomBits::new((i + 1) % 2));
+            let b_bi: BigUint = rng.sample(RandomBits::new((i + 1) % 2));
 
             let n = BigUint::from_str_radix(MOD_HEX, 16).unwrap();
             let ref_r = (&a_bi + &b_bi) % n;
@@ -533,8 +527,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         for i in 0..300 {
-            let a_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
-            let b_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
+            let a_bi: BigUint = rng.sample(RandomBits::new((i + 1) % 2));
+            let b_bi: BigUint = rng.sample(RandomBits::new((i + 1) % 2));
 
             let n = BigUint::from_str_radix(MOD_HEX, 16).unwrap();
             let ref_r = if a_bi >= n {
