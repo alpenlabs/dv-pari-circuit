@@ -1,5 +1,29 @@
+//! Point Scalar Multiplication in Binary Circuit
+//! Implementation referenced from "Efficient Arithmetic on Koblitz Curves - Jerome A. Solinas" and xs233-sys
+
 const TAU_ADIC_LEN: usize = 470;
 
+/// Tau-adic representation: k = Sum u_i τ^i
+/// A scalar is represented by sum of powers of τ, u_i here can be 0 or 1
+/// For a 232 bit scalar field element, i ranges over twice that value i.e. 232x2
+/// We use this representation with windowed point scalar multiplication, we have found that window size of 5 digits is optimal,
+/// therefore multiple of 5 greater than 232x2 = 470 is chosen as `TAU_ADIC_LEN`
+///
+/// solinas2000 provides algorithm for windowed tau-adic NAF
+/// xs233-sys has implementation also for windowed tau-adic NAF
+/// However our implementation for now follows windowed tau-adic representation only.
+///
+/// Algorithm: Repeated Division by tau.
+/// Much the same way a decimal number can be converted into binary digits by repeateded division by 2,
+/// we can convert an integer into tau-adic representation by repeatedly dividing by tau and taking remainder sequence as result
+/// solinas2000 explains when a number is divisible by tau and how to collect its remainder as the result.
+///
+/// The element c_0 + c_1 τ is divisible by τ if and only if c_0 is even. If it is divisble by τ, remainder is 0, else 1.
+/// So LSB of c_0 gives the remainder, which is collected to get the output.
+/// Rule for division: (c_0 + c_1 τ) / τ = (c1 - c0/2) + (-c_0/2) τ
+/// 
+/// With tau adic representation, you can substitute point doubling in double-and-add algorithm with squaring operation,
+/// which is linear and only uses XOR gates
 mod tau_adic_repr {
 
     use super::TAU_ADIC_LEN;
@@ -8,12 +32,6 @@ mod tau_adic_repr {
 
     #[cfg(test)]
     pub(crate) fn tau_adic_repr_bits(k_bits: &[u8; FR_LEN]) -> [u8; TAU_ADIC_LEN] {
-        // Parameters -------------------------------------------------------------
-
-        // Helper closures --------------------------------------------------------
-        // XOR / AND on bit‑encoded u8 (0/1)
-        let band = |x: u8, y: u8| -> u8 { x & y };
-
         // full‑adder for one bit returning (sum, carry)
         let full_add = |x: u8, y: u8, c: u8| -> (u8, u8) {
             let sum = x ^ y ^ c;
@@ -28,7 +46,7 @@ mod tau_adic_repr {
             for i in 0..FR_LEN {
                 let (s, c) = full_add(x[i], y[i], carry);
                 out[i] = s;
-                carry = c;
+                carry = c; // discard carry while working with 2's complement
             }
             out
         };
@@ -42,7 +60,7 @@ mod tau_adic_repr {
             for inv_i in inv.iter_mut().take(FR_LEN) {
                 let (s, c) = full_add(*inv_i, 0, carry);
                 *inv_i = s;
-                carry = c;
+                carry = c; // discard carry while working with 2's complement
             }
             inv
         };
@@ -51,11 +69,11 @@ mod tau_adic_repr {
         let arith_shift_right = |v: &Vec<u8>| -> Vec<u8> {
             let mut out = vec![0u8; FR_LEN];
             out[..(FR_LEN - 1)].copy_from_slice(&v[1..((FR_LEN - 1) + 1)]);
-            out[FR_LEN - 1] = v[FR_LEN - 1]; // sign bit stays
+            out[FR_LEN - 1] = v[FR_LEN - 1]; // sign bit (MSB) of 'v' in 2's complement form remains the same
             out
         };
 
-        // subtract 1 (only used when u == 1 & active)
+        // subtract 1 (only used when u == 1)
         let sub_one = |v: &mut Vec<u8>| {
             let mut borrow = 1u8;
             for bit in v.iter_mut() {
@@ -69,50 +87,35 @@ mod tau_adic_repr {
         };
 
         // -----------------------------------------------------------------------
-        // Registers a, b  (two‑complement) and active flag
-        let mut a: Vec<u8> = k_bits.to_vec(); // copy input bits LSB‑first
-        let mut b: Vec<u8> = vec![0u8; FR_LEN];
-        let mut active = 1u8;
+        // Registers c0, c1  (two‑complement)
+        let mut c0: Vec<u8> = k_bits.to_vec(); // copy input bits LSB‑first
+        let mut c1: Vec<u8> = vec![0u8; FR_LEN];
 
         // output digits
         let mut out = [0u8; TAU_ADIC_LEN];
 
+        // Element c0 + c1 \tau is divisible by \tau if an only if c0 is even
         for out_r in out.iter_mut().take(TAU_ADIC_LEN) {
-            // current digit
-            let u = band(active, a[0]);
+            let u = c0[0]; // LSB
             *out_r = u;
 
-            // compute next (a,b) if still active
-            // a_minus_u = a − u (conditional subtract 1)
             if u == 1 {
-                sub_one(&mut a);
+                // c0 is odd
+                sub_one(&mut c0); // c0 <- c0 - u
             }
 
-            // d = −((a−u)>>1)
-            let half = arith_shift_right(&a);
-            let d = negate(&half);
+            let half = arith_shift_right(&c0);
+            let d = negate(&half); // -c0/2
 
-            // c = b + d
-            let c = add_vec(&b, &d);
+            let c = add_vec(&c1, &d); // c1 + \mew c0/2 => c1 - c0/2
 
-            a = c;
-            b = d;
-
-            // update active flag: active ← ! (a==0 && b==0)
-            let a_zero = a.iter().all(|bit| *bit == 0);
-            let b_zero = b.iter().all(|bit| *bit == 0);
-            active = if a_zero && b_zero { 0 } else { 1 };
+            c0 = c;
+            c1 = d;
         }
         out
     }
 
-    fn full_add<T: Circuit>(
-        b: &mut T,
-        x: usize,
-        y: usize,
-        c: usize,
-        _nz: &mut usize, // running   nz  OR‑accumulator
-    ) -> (usize, usize) {
+    fn full_add<T: Circuit>(b: &mut T, x: usize, y: usize, c: usize) -> (usize, usize) {
         let t = b.xor_wire(x, y); // x ⊕ y
         let sum = b.xor_wire(t, c); // SUM  = x ⊕ y ⊕ c
 
@@ -120,11 +123,6 @@ mod tau_adic_repr {
         let a1 = b.and_wire(x, y); // x & y
         let a2 = b.and_wire(c, t); // c & (x⊕y)
         let carry = b.xor_wire(a1, a2);
-
-        /* OR bit = (x|y) so we can reuse t (x⊕y) and a1 (x&y) */
-        // let bit_or = b.xor_wire(t, a1); // x|y = t ⊕ a1
-
-        // *nz = b.or_wire(*nz, bit_or); // 1 AND per bit (instead of 2 scans)
 
         (sum, carry)
     }
@@ -135,20 +133,16 @@ mod tau_adic_repr {
     }
 
     /* c = a + d     and     nz =  OR_i (c_i | d_i)     */
-    fn add_vec_with_flag<T: Circuit>(b: &mut T, a: &Fr, d: &Fr) -> (Fr, usize) {
+    fn add_vec_with_flag<T: Circuit>(b: &mut T, a: &Fr, d: &Fr) -> Fr {
         let mut out = [b.zero(); FR_LEN];
         let mut carry = b.zero();
-        let mut nz = b.zero(); // running non‑zero flag
 
         for i in 0..FR_LEN {
-            let (s, c) = full_add(b, a[i], d[i], carry, &mut nz);
+            let (s, c) = full_add(b, a[i], d[i], carry);
             out[i] = s;
             carry = c;
-
-            /*    nz already OR's  (c_i | d_i)  via full_add                 */
-            /*    nothing else to do here                                    */
         }
-        (out, nz)
+        out
     }
 
     /* NOT + 1  (two-complement negate) */
@@ -168,11 +162,8 @@ mod tau_adic_repr {
         inv
     }
     /* arithmetic right-shift by one (sign extend) */
-    fn arith_shift_right<T: Circuit>(_b: &mut T, v: &Fr) -> Fr {
-        let mut out = [_b.zero(); FR_LEN];
-        // for i in 0..(W - 1) {
-        //     out[i] = v[i + 1];
-        // }
+    fn arith_shift_right<T: Circuit>(bld: &mut T, v: &Fr) -> Fr {
+        let mut out = [bld.zero(); FR_LEN];
         out[..(FR_LEN - 1)].copy_from_slice(&v[1..((FR_LEN - 1) + 1)]);
         out[FR_LEN - 1] = v[FR_LEN - 1];
         out
@@ -200,12 +191,11 @@ mod tau_adic_repr {
     ) -> [usize; TAU_ADIC_LEN] {
         let mut a: Fr = *k_bits;
         let mut breg: Fr = [b.zero(); FR_LEN];
-        let active = b.one(); // start loop
         let mut out = [b.zero(); TAU_ADIC_LEN];
 
         for out_i in out.iter_mut().take(TAU_ADIC_LEN) {
-            /* u = active ∧ a₀  --------------------------------------------------*/
-            let u = b.and_wire(active, a[0]);
+            /* u = a₀  --------------------------------------------------*/
+            let u = a[0];
             *out_i = u;
 
             /* a ← a − u  (reuse existing helper)                                */
@@ -216,13 +206,10 @@ mod tau_adic_repr {
             let d = negate(b, &half);
 
             /* c = b + d   and   nz = OR(c , d)  ------------------------------- */
-            let (c, _nz_from_add) = add_vec_with_flag(b, &breg, &d);
+            let c = add_vec_with_flag(b, &breg, &d);
 
             a = c;
             breg = d;
-
-            /* active ← nz_from_add  ------------------------------------------- */
-            // active = nz_from_add;
         }
         out
     }
@@ -240,28 +227,10 @@ mod tau_adic_repr {
 
         use super::*;
 
-        // #[test]
-        // fn test_tau_adic_repr_bits() {
-        //     //let mut rng = rand::thread_rng();
-        //     //let k: BigUint = rng.sample(RandomBits::new(232));
-        //     let k = BigUint::from_u16(9u16).unwrap();
-        //     let mut k256 = [0u8; 232];
-        //     let kbits = fr_to_bits(&k);
-        //     k256[0..232].copy_from_slice(&kbits);
-
-        //     let rd = tau_adic_repr_bits(&k256);
-        //     let rd_ref = ref_tau_adic_repr_circuit(&k.into());
-        //     assert_eq!(rd, rd_ref);
-        // }
-
         #[test]
         fn test_tau_adic_repr_bits_circuit() {
             let mut rng = rand::thread_rng();
             let k: BigUint = rng.sample(RandomBits::new(232));
-
-            // let mut k: [u8; 233] = [0u8; 233];
-            // k[0] = 1;
-            // let k = bits_to_biguint(&k);
 
             let kbits = {
                 let mut k256 = [0u8; FR_LEN];
@@ -292,6 +261,7 @@ mod tau_adic_repr {
     }
 }
 
+/// Windowed tau-adic representation works by precomputing a 1 << w sized lookup table with multiples of a CurvePoint per row
 mod precompute_table {
     use crate::{
         builder::{Circuit, Template},
@@ -299,6 +269,9 @@ mod precompute_table {
         gf_ckt::GF_LEN,
     };
 
+    /// lookup precompute table
+    // indices in little-endian form
+    // table: [0..2^w-1]P
     pub(crate) fn emit_lookup<T: Circuit>(
         bld: &mut T,
         table: &[CurvePoint],
@@ -361,6 +334,7 @@ mod precompute_table {
         level[0]
     }
 
+    // generate precompute table
     pub(crate) fn emit_precompute_table<T: Circuit>(
         bld: &mut T,
         p: &CurvePoint,
@@ -458,7 +432,6 @@ mod precompute_table {
             let w = 2;
             let pt_ref = InnerPointRef::generator();
             let tables_ref = ref_precompute_table(&pt_ref, w);
-            println!("table_ref.len {}", tables_ref.len());
 
             let mut bld = CktBuilder::default();
             let pt_gen = CurvePoint::generator(&mut bld);
@@ -469,7 +442,6 @@ mod precompute_table {
                 witness.extend_from_slice(&pt_bits);
             }
 
-            println!("emit_precompute_table");
             let st = Instant::now();
             let tables_ckt = emit_precompute_table(&mut bld, &pt_gen, w);
             let el = st.elapsed();
@@ -541,29 +513,12 @@ mod precompute_table {
                 let z = gfref_to_bits(&rt.z);
                 let t = gfref_to_bits(&rt.t);
 
-                let x: Vec<usize> = x
-                    .iter()
-                    .map(|xi| if *xi { bld.one() } else { bld.zero() })
-                    .collect();
-                let s: Vec<usize> = s
-                    .iter()
-                    .map(|xi| if *xi { bld.one() } else { bld.zero() })
-                    .collect();
-                let z: Vec<usize> = z
-                    .iter()
-                    .map(|xi| if *xi { bld.one() } else { bld.zero() })
-                    .collect();
-                let t: Vec<usize> = t
-                    .iter()
-                    .map(|xi| if *xi { bld.one() } else { bld.zero() })
-                    .collect();
+                let x = x.map(|xi| if xi { bld.one() } else { bld.zero() });
+                let s = s.map(|xi| if xi { bld.one() } else { bld.zero() });
+                let z = z.map(|xi| if xi { bld.one() } else { bld.zero() });
+                let t = t.map(|xi| if xi { bld.one() } else { bld.zero() });
 
-                let pt = CurvePoint {
-                    x: x.try_into().unwrap(),
-                    s: s.try_into().unwrap(),
-                    z: z.try_into().unwrap(),
-                    t: t.try_into().unwrap(),
-                };
+                let pt = CurvePoint { x, s, z, t };
                 tables_ckt.push(pt);
             }
 
@@ -606,6 +561,8 @@ mod precompute_table {
     }
 }
 
+/// Windowed tau-adic point scalar multiplication
+// TODO: Use PRTNAF for lower gate counts
 pub(crate) mod point_scalar_mul {
     use crate::{
         builder::{Circuit, Template},
@@ -626,13 +583,11 @@ pub(crate) mod point_scalar_mul {
         w: usize,
     ) -> CurvePoint {
         let mut tau_bits = emit_tau_adic_repr_bits(bld, k);
-        tau_bits.reverse();
+        tau_bits.reverse(); // start from msb
 
         let table = emit_precompute_table(bld, point_p, w);
 
         let mut r = CurvePoint::identity(bld);
-
-        // let mut tmplt = Template::default();
 
         for i in (0..TAU_ADIC_LEN).step_by(w) {
             for _ in 0..w {
@@ -640,7 +595,8 @@ pub(crate) mod point_scalar_mul {
             }
 
             let mut lidx = tau_bits[i..i + w].to_vec();
-            lidx.reverse();
+            lidx.reverse(); // into little endian form undoes `tau_bits.reverse()`, tau_bits itself was in little-endian when received as input
+
             let q = emit_lookup(bld, &table, lidx);
 
             r = Template::emit_point_add_custom(bld, &r, &q);
@@ -672,7 +628,6 @@ pub(crate) mod point_scalar_mul {
             let mut rng = rand::thread_rng();
             let k: BigUint = rng.sample(RandomBits::new(231));
 
-            println!("ref mul_windowed_tau {:?}", k);
             let out_ref = point_scalar_multiplication(&k, &gref);
 
             // +++++++++++
@@ -707,7 +662,7 @@ pub(crate) mod point_scalar_mul {
             let st = st.elapsed();
             println!("emit_mul_windowed_tau took {} seconds", st.as_secs());
 
-            // bld.write_bristol_periodic("psm4.bristol").unwrap();
+            // bld.write_bristol_periodic("psm4.bristol").unwrap(); // uncomment if you want to dump to bristol file
 
             bld.show_gate_counts();
 

@@ -1,8 +1,9 @@
+//! Basic base field element operations in binary circuit
 pub(crate) const GF_LEN: usize = 233;
 /// Representation of a base field element as wire labels
 pub(crate) type Gf = [usize; GF_LEN];
 
-use crate::{builder::Circuit, curve_ckt::CompressedCurvePoint, gf_mul_fft_ckt::emit_gf_mul};
+use crate::{builder::Circuit, curve_ckt::CompressedCurvePoint, gf_mul_ckt::emit_gf_mul};
 
 /* Input  : two 233-wire operands, little-endian bit order          */
 /* Output : 233 wires, bit-wise XOR                                 */

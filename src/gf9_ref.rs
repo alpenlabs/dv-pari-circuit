@@ -1,3 +1,4 @@
+//! Module for non-circuit implementation of different functions over GF(2^9)
 use crate::gf9_ckt::GF9_LEN;
 
 pub(crate) type Gf9Ref = u16;

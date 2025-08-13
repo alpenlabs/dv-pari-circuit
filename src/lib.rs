@@ -14,7 +14,7 @@ pub(crate) mod dv_ref;
 
 pub(crate) mod gf_ckt;
 pub(crate) mod gf_interpolate_ckt;
-pub(crate) mod gf_mul_fft_ckt;
+pub(crate) mod gf_mul_ckt;
 pub(crate) mod gf_ref;
 
 pub(crate) mod gf9_ckt;

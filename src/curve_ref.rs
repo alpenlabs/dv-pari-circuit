@@ -1,3 +1,7 @@
+//! Reference implementation for curve operations.
+//! The following functions do not assume binary circuit representation and are used
+//! only to validate their respective implementation in binary circuit through tests
+
 #![cfg(test)]
 use std::{os::raw::c_void, str::FromStr};
 
@@ -111,11 +115,12 @@ impl CurvePointRef {
 
             [limb0, limb1, limb2, limb3]
         }
-        // sanity-check: no coordinate may exceed 233 bits
-        if self.x.bits() > 233 || self.s.bits() > 233 || self.z.bits() > 233 || self.t.bits() > 233
-        {
-            panic!()
-        }
+        assert!(
+            self.x.bits() <= 233
+                || self.s.bits() <= 233
+                || self.z.bits() <= 233
+                || self.t.bits() <= 233
+        );
 
         let mut w = [0u64; 16];
 
@@ -154,9 +159,7 @@ pub(crate) fn point_add(p1: &CurvePointRef, p2: &CurvePointRef) -> CurvePointRef
      * x1x2 <- X1*X2
      * s1s2 <- S1*S2
      * z1z2 <- Z1*Z2
-     * (suppressed: t1t2 <- T1*T2)
      * d <- (S1 + T1)*(S2 + T2)
-     * (suppressed: e <- (a^2)*t1t2)
      * f <- x1x2^2
      * g <- z1z2^2
      * X3 <- d + s1s2
@@ -204,27 +207,6 @@ pub(crate) fn point_frob(p1: &CurvePointRef) -> CurvePointRef {
     p3
 }
 
-/// Inner subtraction function on xsk233 curve.
-///
-/// Performs point subtraction: p3 = p1 - p2
-/// This is implemented by modifying p2 and then calling the addition function.
-pub(crate) fn point_sub(p1: &CurvePointRef, p2: &CurvePointRef) -> CurvePointRef {
-    // Create a temporary modified point p4 based on p2
-    let mut p4 = CurvePointRef {
-        x: p2.x.clone(), // p4.x = p2.x
-        s: GfRef::ZERO,  // Will be set below
-        z: p2.z.clone(), // p4.z = p2.z
-        t: p2.t.clone(), // p4.t = p2.t
-    };
-
-    // p4.s = p2.s + p2.t
-    p4.s = gfref_add(&p2.s, &p2.t);
-
-    // Use the inner addition function: p3 = p1 + p4
-
-    point_add(p1, &p4)
-}
-
 pub(crate) fn point_scalar_multiplication(k: &GfRef, point_p: &CurvePointRef) -> CurvePointRef {
     fn fr_to_le_bytes(fr: &BigUint) -> Vec<u8> {
         let limbs = fr.to_u64_digits();
@@ -267,7 +249,7 @@ mod xsys_test {
     use std::str::FromStr;
 
     use crate::{
-        curve_ref::{CurvePointRef, point_add, point_frob, point_scalar_multiplication, point_sub},
+        curve_ref::{CurvePointRef, point_add, point_scalar_multiplication},
         gf_ref::gfref_mul,
     };
 
@@ -325,41 +307,6 @@ mod xsys_test {
     }
 
     #[test]
-    fn test_point_frob() {
-        unsafe {
-            let pt = CurvePointRef {
-                x: BigUint::from_str(
-                    "13283792768796718556929275469989697816663440403339868882741001477299174",
-                )
-                .unwrap(),
-                s: BigUint::from_str(
-                    "6416386389908495168242210184454780244589215014363767030073322872085145",
-                )
-                .unwrap(),
-                z: BigUint::from_str("1").unwrap(),
-                t: BigUint::from_str(
-                    "13283792768796718556929275469989697816663440403339868882741001477299174",
-                )
-                .unwrap(),
-            };
-
-            let ptf = point_frob(&pt);
-            let ptf_again = point_frob(&ptf);
-            let ptf_sum = point_sub(&ptf_again, &ptf);
-            let ptf = ptf_sum.to_xsk233_point();
-
-            let dbl = point_add(&pt, &pt);
-            let dbl = dbl.to_xsk233_point();
-
-            println!("ptf {:?}", ptf);
-            println!("dbl {:?}", dbl);
-            let res = xs233_sys::xsk233_equals(&ptf, &dbl);
-
-            println!("matches {}", res);
-        }
-    }
-
-    #[test]
     fn test_point_scalar_mul() {
         unsafe {
             let genr = xs233_sys::xsk233_generator;
@@ -370,7 +317,6 @@ mod xsys_test {
 
             let mut nptadd: xs233_sys::xsk233_point = xs233_sys::xsk233_neutral;
             xs233_sys::xsk233_add(&mut nptadd, &nptc2, &nptc3);
-            println!("point add {:?}", nptadd);
 
             let mut scalar = [0u8; 30];
             scalar[0] = 2; // little-endian 2
@@ -385,7 +331,7 @@ mod xsys_test {
 
             let res = xs233_sys::xsk233_equals(&by_mul, &nptadd);
 
-            println!("matches {}", res);
+            assert!(res != 0);
         }
     }
 
@@ -421,13 +367,7 @@ mod xsys_test {
 
             // Check if difference is the neutral point
             let is_neutral = xs233_sys::xsk233_is_neutral(&difference);
-            println!("is_neutral {}", is_neutral);
-
-            println!("Point doubling result: {:?}", result_add);
-            println!("Point scalar mul by 2: {:?}", result_mul);
-            println!("Are results equivalent: {}", is_neutral != 0);
-
-            // assert!(is_neutral, "Point doubling should equal scalar multiplication by 2");
+            assert!(is_neutral != 0);
         }
     }
 
@@ -467,11 +407,7 @@ mod xsys_test {
             xs233_sys::xsk233_mul(&mut by_mul, &npt, scalar.as_ptr() as *const _, scalar.len());
 
             let res = xs233_sys::xsk233_equals(&by_mul, &result2);
-
-            // println!("by_mul {:?}", by_mul);
-            // println!("result {:?}", result);
-            // println!("result2 {:?}", result2);
-            println!("matches {}", res != 0);
+            assert!(res != 0);
         }
     }
 
@@ -521,7 +457,7 @@ mod xsys_test {
             xs233_sys::xsk233_add(&mut tr2, &c_pt, &c_pt); // p + p
             xs233_sys::xsk233_add(&mut ref_cpt2, &tr1, &tr2); // 2p + 2p
 
-            println!("matches {}", xsk233_equals(&ref_cpt2, &ref_cpt));
+            assert_ne!(xsk233_equals(&ref_cpt2, &ref_cpt), 0);
         }
     }
 

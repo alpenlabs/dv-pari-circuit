@@ -1,3 +1,4 @@
+//! FFT based base field multiplication
 use crate::{
     builder::Circuit,
     gf_ckt::Gf,
@@ -7,7 +8,8 @@ use crate::{
     gf9_ref::{gf9ref_mul, gf9ref_pow},
 };
 
-/// Generate 52 orbit representatives modulo 2⁹-1=511, skipping multiples of 73
+/// Generate all 58 orbit representatives modulo 2⁹-1=511
+// multiples of 73 have orbit of size 3, while the rest have orbits of size 9
 fn representatives() -> Vec<usize> {
     let mut seen = [false; 511];
     let mut reps = Vec::with_capacity(52);
@@ -28,7 +30,9 @@ fn representatives() -> Vec<usize> {
 
 fn extend_domain(rep: &[usize], xs: &[u16]) -> Vec<u16> {
     let mut exts = Vec::with_capacity(511);
-    exts.extend_from_slice(&xs[0..1]);
+    assert_eq!(rep.len()+1, xs.len());
+    assert_eq!(xs[0], 1); //G^0 -> G^0 is the only point in its orbit, treating it separately
+    exts.push(1);
     for i in 1..xs.len() {
         let mut t = xs[i];
         let rounds = if rep[i - 1].is_multiple_of(73) { 3 } else { 9 };
@@ -40,10 +44,11 @@ fn extend_domain(rep: &[usize], xs: &[u16]) -> Vec<u16> {
     exts
 }
 
-/// Build evaluation points: 0,1 and 52 orbits of length 9 each
+/// Build domain consisting of orbit representatives
+// This can be extended to the full domain consisting of 511 points with `extend_domain`
 fn domain(reps: &[usize]) -> Vec<u16> {
-    let mut xs = Vec::with_capacity(465);
-    xs.push(1);
+    let mut xs = Vec::with_capacity(reps.len() + 1);
+    xs.push(1); // G^0
     const G: u16 = 0x02;
     for &r in reps.iter() {
         let t = gf9ref_pow(G, r as u32);
@@ -52,6 +57,7 @@ fn domain(reps: &[usize]) -> Vec<u16> {
     xs
 }
 
+/// Evaluation over the represetative domain
 fn extend_evaluation<T: Circuit>(
     bld: &mut T,
     reps: &[usize],
@@ -59,7 +65,7 @@ fn extend_evaluation<T: Circuit>(
 ) -> Vec<[usize; 9]> {
     // first two evs are 0, 1
     // rest should be for representatives
-    let mut ys: Vec<[usize; 9]> = Vec::with_capacity(465);
+    let mut ys: Vec<[usize; 9]> = Vec::with_capacity(511);
     ys.push(rep_evs[0]);
 
     for i in 1..rep_evs.len() {
@@ -73,13 +79,25 @@ fn extend_evaluation<T: Circuit>(
     ys
 }
 
-/// FFT-based multiplication: BigUint → BigUint
+/// Base field multiplication using an FFT-like approach.
+/// 
+/// FFT MULTIPLICATION:
+/// We select a handful of important points called `representatives` to evaluate each of the polynomial inputs `a` and `b`.
+/// We then multiply their respective evaluations and then extend this evaluation to the full domain
+/// Finally we interpolate the full set of evaluations into a polynomial
+/// This polynomial is reduced to fit within the base field and returned as result
+/// 
+/// SELCECTING_DOMAIN:
+/// Since the product of two polynomials in GF(2^233) is a 465 degree polynomial, we need > 465 evaluation points.
+/// These evaluation points (domain) can be chosen from GF(2^9). The "orbit" property comes from this binary field.
 pub(crate) fn emit_gf_mul<T: Circuit>(bld: &mut T, a: &Gf, b: &Gf) -> Gf {
-    // Evaluate, multiply, interpolate
+    // Find representative of orbits
     let rep = representatives();
 
+    // Find domain
     let xs = domain(&rep);
 
+    // Evaluate polynomials on domain
     let ya = emit_poly_eval_domain(bld, a, &xs);
     let yb = emit_poly_eval_domain(bld, b, &xs);
     let yc: Vec<[usize; 9]> = ya
@@ -87,7 +105,7 @@ pub(crate) fn emit_gf_mul<T: Circuit>(bld: &mut T, a: &Gf, b: &Gf) -> Gf {
         .zip(yb.iter())
         .map(|(&u, &v)| emit_gf9_mul(bld, u, v))
         .collect();
-    assert_eq!(yc.len(), 59);
+    assert_eq!(yc.len(), 59); // 58 representatives + 1 primitive point G^0
     let ycs = extend_evaluation(bld, &rep, &yc);
 
     let xs = extend_domain(&rep, &xs); // todo: replace with cheap extend_domain
@@ -125,7 +143,7 @@ pub(crate) fn emit_gf_mul<T: Circuit>(bld: &mut T, a: &Gf, b: &Gf) -> Gf {
 
     let pys: [[usize; 9]; 511] = pys.try_into().unwrap();
 
-    // Convert result back to BigUint
+    // Convert evaluations back to polynomial, reduce and return as result
     emit_gf9_interpolate_fft(bld, &pys)
 }
 

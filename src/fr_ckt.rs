@@ -1,3 +1,6 @@
+//! Binary circuit implementation of scalar field multiplication
+//! Uses karatsuba for multiplication and pseudo mersenne prime reduction for modular reduction
+
 use crate::builder::Circuit;
 
 pub(crate) const FR_LEN: usize = 232;
@@ -8,10 +11,6 @@ const THRESH: usize = 32;
 
 #[cfg(test)]
 const MOD_HEX: &str = "8000000000000000000000000000069d5bb915bcd46efb1ad5f173abdf"; // n
-
-// -----------------------------------------------------------------------------
-// Bit‑vector helpers (little‑endian)
-// -----------------------------------------------------------------------------
 
 type Bits = Vec<usize>;
 
@@ -101,12 +100,6 @@ fn ge_unsigned<T: Circuit>(b: &mut T, a: &[usize], c: &[usize]) -> usize {
 ///
 /// **Gate cost:** zero (just copies wire IDs).
 pub(crate) fn emit_shl_bits<T: Circuit>(b: &mut T, v: &[usize], k: usize) -> Vec<usize> {
-    // If the input is empty, the result is just k leading‐zero wires.
-    if v.is_empty() {
-        let zero_wire = b.zero();
-        return std::iter::repeat_n(zero_wire, k).collect();
-    }
-
     let zero_wire = b.zero();
     let mut out = Vec::with_capacity(v.len() + k);
     out.extend(std::iter::repeat_n(zero_wire, k)); // k leading zeros
@@ -116,7 +109,7 @@ pub(crate) fn emit_shl_bits<T: Circuit>(b: &mut T, v: &[usize], k: usize) -> Vec
 
 fn csa<T: Circuit>(b: &mut T, x: usize, y: usize, z: usize) -> (usize, usize) {
     let tmp = b.xor_wire(x, y);
-    let sum = b.xor_wire(tmp, z); // XOR is free
+    let sum = b.xor_wire(tmp, z);
     let t = b.xor_wire(x, y); // p = x⊕y
     let t0 = b.and_wire(x, y);
     let t1 = b.and_wire(t, z);
@@ -126,9 +119,6 @@ fn csa<T: Circuit>(b: &mut T, x: usize, y: usize, z: usize) -> (usize, usize) {
 
 pub(crate) fn mul_school<T: Circuit>(bld: &mut T, a: &Bits, b: &Bits) -> Bits {
     let max_len = a.len() + b.len();
-    if a.is_empty() || b.is_empty() {
-        return vec![bld.zero()];
-    }
 
     // 1. collect ANDs per column
     let mut cols: Vec<Vec<usize>> = vec![Vec::new(); max_len];
@@ -182,8 +172,10 @@ pub(crate) fn mul_school<T: Circuit>(bld: &mut T, a: &Bits, b: &Bits) -> Bits {
 
     // 4. final carry‑propagate once
 
-    add_unsigned(bld, &row0, &row1)
+    let ret = add_unsigned(bld, &row0, &row1);
+    ret
 }
+
 
 pub(crate) fn mul_kara_rec<T: Circuit>(bld: &mut T, a: &Bits, b: &Bits) -> Bits {
     if a.len() <= THRESH || b.len() <= THRESH {
@@ -191,6 +183,7 @@ pub(crate) fn mul_kara_rec<T: Circuit>(bld: &mut T, a: &Bits, b: &Bits) -> Bits 
     }
     let n = a.len().max(b.len());
     let m = n / 2; // split position
+    
     // split a and b
     let a0: Bits = a[..m].to_vec();
     let a1: Bits = a[m..].to_vec();
@@ -271,7 +264,7 @@ pub(crate) fn emit_mul_const_c_csa<T: Circuit>(b: &mut T, t: &[usize]) -> Vec<us
             let global_shift = shift + bit as usize; // (t << bit) << shift
             for (i, &w) in t.iter().enumerate() {
                 let bucket = if neg { &mut cols_neg } else { &mut cols_pos };
-                bucket[i + global_shift].push(w); // wire copy: zero cost
+                bucket[i + global_shift].push(w); 
             }
         }
     }
@@ -328,11 +321,9 @@ pub(crate) fn emit_mul_const_c_csa<T: Circuit>(b: &mut T, t: &[usize]) -> Vec<us
     let len = pos.len().max(neg.len());
     let pos_pad = pad_to(b, pos, len);
     let neg_pad = pad_to(b, neg, len);
-    let ge = ge_unsigned(b, &pos_pad, &neg_pad); // always true but free to keep
-    let diff = sub_unsigned(b, &pos_pad, &neg_pad); // 3 AND/bit once
-    // no‑op mux
 
-    mux_vec(b, ge, &diff, &diff)
+    let diff = sub_unsigned(b, &pos_pad, &neg_pad); // 3 AND/bit once
+    diff
 }
 
 /// little-endian bit vector of the modulus  n
@@ -346,13 +337,13 @@ fn const_mod_n<T: Circuit>(b: &mut T) -> Vec<usize> {
             out.push(if bit { b.one() } else { b.zero() });
         }
     }
-    out.truncate(FR_LEN); // n is 233 bits
+    out.truncate(FR_LEN);
     out
 }
 
 pub(crate) fn emit_reduce_pseudo_mersenne<T: Circuit>(
     b: &mut T,
-    prod: &[usize], // arbitrary-length product
+    prod: &[usize], 
 ) -> Vec<usize> {
     /* base case: prod < 2²³¹  → already <  n  */
     if prod.len() <= REDUCTION_SPLIT {
@@ -401,7 +392,6 @@ pub(crate) fn emit_reduce_pseudo_mersenne<T: Circuit>(
 // -----------------------------------------------------------------------------
 pub(crate) fn emit_fr_mul<T: Circuit>(bld: &mut T, a: &Fr, b: &Fr) -> Fr {
     let prod = mul_kara_rec(bld, &a.to_vec(), &b.to_vec());
-
     let res: [usize; FR_LEN] = emit_reduce_pseudo_mersenne(bld, &prod).try_into().unwrap();
     res
 }
@@ -409,21 +399,21 @@ pub(crate) fn emit_fr_mul<T: Circuit>(bld: &mut T, a: &Fr, b: &Fr) -> Fr {
 // fr add
 pub(crate) fn emit_fr_add<T: Circuit>(bld: &mut T, a: &Fr, b: &Fr) -> Fr {
     let one = bld.one();
-    let sum = add_unsigned(bld, a, b);
+    let sum = add_unsigned(bld, a, b); // a+b
     let mut modul = const_mod_n(bld);
     modul.push(bld.zero());
     assert_eq!(sum.len(), modul.len());
-    let reduced_sum = sub_unsigned(bld, &sum, &modul);
-    let ge = ge_unsigned(bld, &sum, &modul);
+    let reduced_sum = sub_unsigned(bld, &sum, &modul); // a+b-n
+    let ge = ge_unsigned(bld, &sum, &modul); // a+b>=n
     let nge = bld.xor_wire(ge, one);
-    let masked_reduced_sum: Vec<usize> = reduced_sum.iter().map(|r| bld.and_wire(*r, ge)).collect();
-    let masked_sum: Vec<usize> = sum.iter().map(|r| bld.and_wire(*r, nge)).collect();
+    let masked_reduced_sum: Vec<usize> = reduced_sum.iter().map(|r| bld.and_wire(*r, ge)).collect(); // (a+b-n)*ge
+    let masked_sum: Vec<usize> = sum.iter().map(|r| bld.and_wire(*r, nge)).collect(); // (a+b)*ge'
     assert_eq!(masked_reduced_sum.len(), masked_sum.len());
     let res: Vec<usize> = masked_reduced_sum
         .iter()
         .zip(masked_sum)
         .map(|(x0, x1)| bld.xor_wire(*x0, x1))
-        .collect();
+        .collect(); // (a+b)*ge' ^ (a+b-n)*ge
     let res: [usize; FR_LEN] = res[0..FR_LEN].try_into().unwrap();
     res
 }
@@ -479,10 +469,10 @@ mod tests {
 
         let c_labels = emit_fr_mul(&mut bld, &a_labels, &b_labels);
 
-        for _ in 0..100 {
+        for i in 0..100 {
             let mut rng = rand::thread_rng();
-            let a_bi: BigUint = rng.sample(RandomBits::new(231));
-            let b_bi: BigUint = rng.sample(RandomBits::new(231));
+            let a_bi: BigUint = rng.sample(RandomBits::new((i+1) * 2));
+            let b_bi: BigUint = rng.sample(RandomBits::new((i+1) * 2));
 
             let n = BigUint::from_str_radix(MOD_HEX, 16).unwrap();
             let ref_r = (&a_bi * &b_bi) % n;
@@ -511,9 +501,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        for _ in 0..100 {
-            let a_bi: BigUint = rng.sample(RandomBits::new(231));
-            let b_bi: BigUint = rng.sample(RandomBits::new(231));
+        for i in 0..300 {
+            let a_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
+            let b_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
 
             let n = BigUint::from_str_radix(MOD_HEX, 16).unwrap();
             let ref_r = (&a_bi + &b_bi) % n;
@@ -542,9 +532,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        for _ in 0..100 {
-            let a_bi: BigUint = rng.sample(RandomBits::new(231));
-            let b_bi: BigUint = rng.sample(RandomBits::new(231));
+        for i in 0..300 {
+            let a_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
+            let b_bi: BigUint = rng.sample(RandomBits::new((i+1)%2));
 
             let n = BigUint::from_str_radix(MOD_HEX, 16).unwrap();
             let ref_r = if a_bi >= n {

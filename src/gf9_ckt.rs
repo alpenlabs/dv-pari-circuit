@@ -1,3 +1,8 @@
+//! GF(2^9) polynomial multiplication.
+//! GF(2^233) polynomials are evaluated at points in GF(2^9).
+//! These evaluations are then multiplied in pair.
+//! 
+//! Module provides necessary functions for this multiplication.
 use crate::builder::{Circuit, xor_many, xor_three, xor_vec};
 
 pub(crate) const GF9_LEN: usize = 9;

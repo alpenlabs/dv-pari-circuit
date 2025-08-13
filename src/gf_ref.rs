@@ -1,3 +1,6 @@
+//! Reference implementation of different functions in base field to compare and test
+//! circuit implementation of similar base field functions
+
 #![cfg(test)]
 use num_bigint::BigUint;
 use num_traits::{One, Zero};

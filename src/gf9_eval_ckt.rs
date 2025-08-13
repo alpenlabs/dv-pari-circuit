@@ -1,47 +1,6 @@
+//! Module to evaluate polynomial in GF(2^233) at sample points in GF(2^9)
+//! 
 /* bits are numbered a₀ (LSB) … a₈ (MSB)                                           */
-
-/*  step-1:  xtime  (a · x  mod x⁹+x⁴+1)  — XOR-only linear map */
-fn _xtime_bits<T: Circuit>(b: &mut T, v: GF9) -> GF9 {
-    [
-        v[8],                   // x⁸  →  x⁰
-        v[0],                   // x⁰  →  x¹
-        v[1],                   // x¹  →  x²
-        v[2],                   // x²  →  x³
-        b.xor_wire(v[3], v[8]), // x³ ⊕ x⁸  →  x⁴
-        v[4],                   // x⁴  →  x⁵
-        v[5],                   // x⁵  →  x⁶
-        v[6],                   // x⁶  →  x⁷
-        v[7],                   // x⁷  →  x⁸
-    ]
-}
-
-/*  step-2:  constant-time multiply by PUBLIC 9-bit constant  C                 */
-/*           (algorithm identical to the software routine, masks are PUBLIC)    */
-fn _emit_mul_by_const_old<T: Circuit>(
-    b: &mut T,
-    word_bits: GF9, /* secret  a */
-    const_c: u16,   /* PUBLIC  C  (0‥511) */
-) -> GF9 {
-    /* running multiplicand */
-    let mut cur = word_bits;
-
-    /* running result (start at zero) */
-    let zero = b.zero();
-    let mut acc = [zero; 9];
-
-    for i in 0..9 {
-        if (const_c >> i) & 1 == 1 {
-            /* XOR-add cur into acc (bit-wise) */
-            for j in 0..9 {
-                acc[j] = b.xor_wire(acc[j], cur[j]);
-            }
-        }
-        /* cur ← cur · x  (xtime) */
-        cur = _xtime_bits(b, cur);
-    }
-    acc
-}
-
 fn matrix_multiply(a: [[u8; 9]; 9], b: [[u8; 9]; 9]) -> [[u8; 9]; 9] {
     // Initialize a new 9x9 result matrix with all zeros.
     let mut result = [[0u8; 9]; 9];
@@ -65,7 +24,7 @@ fn matrix_multiply(a: [[u8; 9]; 9], b: [[u8; 9]; 9]) -> [[u8; 9]; 9] {
 }
 
 // This logic would be executed at compile time (e.g., in a build.rs script or a procedural macro)
-fn compute_transformation_matrix(const_c: u16) -> [[u8; 9]; 9] {
+fn compute_transformation_matrix(const_c: Gf9Ref) -> [[u8; 9]; 9] {
     // Represents the linear transformation for multiplication by 'x' in the Galois Field.
     // This is a constant matrix derived from the xtime_bits function logic.
     let t_x: [[u8; 9]; 9] = [
@@ -116,7 +75,7 @@ fn compute_transformation_matrix(const_c: u16) -> [[u8; 9]; 9] {
 pub(crate) fn emit_mul_by_const<T: Circuit>(
     b: &mut T,
     word_bits: GF9, /* secret  a */
-    const_c: u16,   /* PUBLIC  C */
+    const_c: Gf9Ref,   /* PUBLIC  C */
 ) -> GF9 {
     // This matrix M is pre-computed and stored as a constant
     let m = compute_transformation_matrix(const_c);
@@ -161,9 +120,7 @@ fn xor_many<T: Circuit>(b: &mut T, wires: &[usize]) -> usize {
 /* PUBLIC 9-bit constants.  Result for each point is 9 secret wires.      */
 
 use crate::{
-    builder::Circuit,
-    gf_ckt::Gf,
-    gf9_ckt::{GF9, GF9_LEN},
+    builder::Circuit, gf9_ckt::{GF9, GF9_LEN}, gf9_ref::Gf9Ref, gf_ckt::Gf
 };
 
 /* 9 zero-wires helper --------------------------------------------------- */
@@ -176,7 +133,7 @@ fn zero_9<T: Circuit>(b: &mut T) -> GF9 {
 fn emit_poly_eval_fixed<T: Circuit>(
     b: &mut T,
     coeff_bits: &Gf,   /* secret coeffs, bit-LSB order  a₀…a₂₃₂ */
-    sample_const: u16, /* PUBLIC sample point           ( <512 )*/
+    sample_const: Gf9Ref, /* PUBLIC sample point           ( <512 )*/
 ) -> GF9 {
     /* acc starts at 0 */
     let mut acc = zero_9(b);
@@ -196,7 +153,7 @@ fn emit_poly_eval_fixed<T: Circuit>(
 pub(crate) fn emit_poly_eval_domain<T: Circuit>(
     b: &mut T,
     coeff_bits: &Gf,
-    domain: &[u16], /* list of sample points         */
+    domain: &[Gf9Ref], /* list of sample points         */
 ) -> Vec<GF9> {
     domain
         .iter()
@@ -212,7 +169,7 @@ mod test {
     use crate::{builder::CktBuilder, gf_ckt::Gf, gf9_ref::gf9ref_mul};
 
     /// Reference Function: Evaluate a 233-bit polynomial (bit vector) at all x in `xs`
-    pub(crate) fn ref_evaluate_poly_at_fixed_gf9(polynom: &[u8; 233], domain: &[u16]) -> Vec<u16> {
+    pub(crate) fn ref_evaluate_poly_at_fixed_gf9(polynom: &[u8; 233], domain: &[Gf9Ref]) -> Vec<Gf9Ref> {
         use crate::gf9_ref::gf9ref_mul;
 
         let mut evals = Vec::with_capacity(domain.len());
@@ -287,6 +244,7 @@ mod test {
         let a_bits: GF9 = bld.fresh();
         //let b_bits: GF9 = bld.fresh();
         let out_bits_k = emit_mul_by_const(&mut bld, a_bits, b);
+        bld.show_gate_counts();
 
         for _ in 0..1_000 {
             let a: u16 = rng.r#gen::<u16>() & 0x1FF; // random 9-bit ints
@@ -307,7 +265,6 @@ mod test {
 
             let nhw = gf9ref_mul(a, b);
             assert_eq!(chw, nhw, "Mismatch for a=0x{:03x}, b=0x{:03x}", a, b);
-            bld.show_gate_counts()
         }
     }
 }

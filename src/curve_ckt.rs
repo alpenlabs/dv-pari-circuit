@@ -11,7 +11,7 @@ use crate::{
         GF_LEN, Gf, emit_gf_add, emit_gf_decode, emit_gf_halftrace, emit_gf_inv, emit_gf_is_zero,
         emit_gf_square, emit_gf_trace,
     },
-    gf_mul_fft_ckt::emit_gf_mul,
+    gf_mul_ckt::emit_gf_mul,
 };
 
 /// Representation of a point, on the xsk233 curve in projective co-ordinates, as wire labels
@@ -187,6 +187,8 @@ pub(crate) fn emit_point_frob<T: Circuit>(bld: &mut T, p1: &CurvePoint) -> Curve
     }
 }
 
+/// Decodes a compressed curve point if valid
+// Emits (decoded CurvePoint, validity_bit) where validity_bit is 0 if the input was invalid
 pub(crate) fn emit_xsk233_decode<T: Circuit>(
     bld: &mut T,
     src: &CompressedCurvePoint,

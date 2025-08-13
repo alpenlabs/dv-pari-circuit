@@ -161,25 +161,6 @@ fn dft_7<T: Circuit>(bld: &mut T, input: &[W; 7], root: u16, is_inverse: bool) -
     output
 }
 
-/// A dedicated kernel for the 73-point DFT.
-/// For now, it's a direct O(p^2) implementation, ready for Rader's algorithm.
-fn _dft_73_old(input: &[u16; 73], root: u16, is_inverse: bool) -> [u16; 73] {
-    let mut output = [0; 73];
-    let w = if is_inverse { gf9_inv(root) } else { root };
-
-    for (j, output_j) in output.iter_mut().enumerate() {
-        let mut sum: u16 = 0;
-        for (k, input_k) in input.iter().enumerate().take(73) {
-            let exponent = (j * k) as u32;
-            let twiddle = gf9ref_pow(w, exponent);
-            let term = gf9ref_mul(*input_k, twiddle);
-            sum ^= term;
-        }
-        *output_j = sum;
-    }
-    output
-}
-
 /* ---------- helpers shared by all tests ---------- */
 //const P: usize = 73;
 const LEN: usize = 72;
