@@ -353,7 +353,7 @@ fn const_biguint_to_labels<T: Circuit>(bld: &mut T, num: FrRef) -> Fr {
 }
 
 /// Function to compile dvsnark verifier circuit
-pub fn compile_verifier() -> (CktBuilder, LabelInfo) {
+pub fn compile_verifier(sp1_vk: &str) -> (CktBuilder, LabelInfo) {
     let mut bld = CktBuilder::default();
 
     let input_wire_start = bld.next_wire();
@@ -361,7 +361,7 @@ pub fn compile_verifier() -> (CktBuilder, LabelInfo) {
     let input_wire_end = bld.next_wire();
 
     // Prepare
-    let passed_label = verify(&mut bld, proof, rpin, secrets);
+    let passed_label = verify(&mut bld, proof, rpin, sp1_vk, secrets);
     let label_info = LabelInfo {
         input_wire_range: (input_wire_start, input_wire_end - 1), // -1 because inclusive range
         const_zero: bld.zero(),
@@ -383,6 +383,7 @@ pub(crate) fn verify<T: Circuit>(
     bld: &mut T,
     proof: Proof,
     raw_public_inputs: RawPublicInputs,
+    sp1_vk: &str,
     secrets: Trapdoor,
 ) -> usize {
     let (proof_commit_p, decode_proof_commit_p_success) = emit_xsk233_decode(bld, &proof.commit_p);
@@ -401,9 +402,7 @@ pub(crate) fn verify<T: Circuit>(
 
     let public_inputs_1 = get_pub_hash_from_raw_pub_inputs(bld, &raw_public_inputs);
     let public_inputs_0_vk_const = {
-        let num =
-            FrRef::from_str("7527402554317099476086310993202889463751940730940407143885949231928")
-                .unwrap(); // vk
+        let num = FrRef::from_str(sp1_vk).unwrap(); // vk
         const_biguint_to_labels(bld, num)
     };
 
@@ -475,7 +474,9 @@ mod test {
     #[test]
     #[ignore] // ignore because of being long running
     fn test_verify_over_mock_inputs() {
-        let (mut bld, label_info) = compile_verifier();
+        const SP1_VK_BLAKE3_FIBO: &str =
+            "7527402554317099476086310993202889463751940730940407143885949231928";
+        let (mut bld, label_info) = compile_verifier(SP1_VK_BLAKE3_FIBO);
 
         // Prepare VerifierPayloadRef
         let tau: FrRef = BigUint::from_str(
@@ -534,7 +535,9 @@ mod test {
     #[test]
     #[ignore] // ignore because of being long running
     fn test_invalid_proof_over_mock_inputs() {
-        let (mut bld, label_info) = compile_verifier();
+        const SP1_VK_BLAKE3_FIBO: &str =
+            "7527402554317099476086310993202889463751940730940407143885949231928";
+        let (mut bld, label_info) = compile_verifier(SP1_VK_BLAKE3_FIBO);
 
         // Prepare VerifierPayloadRef
         let tau: FrRef = BigUint::from_str(

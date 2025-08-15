@@ -80,7 +80,6 @@ pub(crate) fn get_pub_hash_from_raw_pub_inputs(raw_pub_in: &RawPublicInputsRef) 
 }
 
 const MOD_HEX: &str = "8000000000000000000000000000069d5bb915bcd46efb1ad5f173abdf"; // n
-const SP1_VK: &str = "7527402554317099476086310993202889463751940730940407143885949231928";
 
 fn fr_add(a: &FrRef, b: &FrRef) -> FrRef {
     let n = FrRef::from_str_radix(MOD_HEX, 16).unwrap();
@@ -100,6 +99,7 @@ fn fr_mul(a: &FrRef, b: &FrRef) -> FrRef {
 pub(crate) fn verify(
     proof: ProofRef,
     raw_public_inputs: RawPublicInputsRef,
+    sp1_vk: &str,
     secrets: TrapdoorRef,
 ) -> bool {
     let (proof_commit_p, decode_proof_commit_p_success) =
@@ -110,7 +110,7 @@ pub(crate) fn verify(
     let decode_scalars_success = proof.a0 < n && proof.b0 < n;
 
     let public_inputs_1 = get_pub_hash_from_raw_pub_inputs(&raw_public_inputs);
-    let public_inputs_0_vk_const = FrRef::from_str(SP1_VK).unwrap(); // vk
+    let public_inputs_0_vk_const = FrRef::from_str(sp1_vk).unwrap(); // vk
 
     let fs_challenge_alpha = get_fs_challenge(
         proof.commit_p,
@@ -204,7 +204,8 @@ mod test {
         let rpin = RawPublicInputsRef {
             deposit_index: raw_public_inputs,
         };
-        let passed = verify(proof, rpin, secrets);
+        const SP1_VK: &str = "7527402554317099476086310993202889463751940730940407143885949231928";
+        let passed = verify(proof, rpin, SP1_VK, secrets);
         assert!(passed);
     }
 
@@ -254,7 +255,8 @@ mod test {
         let rpin = RawPublicInputsRef {
             deposit_index: raw_public_inputs,
         };
-        let passed = verify(proof, rpin, secrets);
+        const SP1_VK: &str = "7527402554317099476086310993202889463751940730940407143885949231928";
+        let passed = verify(proof, rpin, SP1_VK, secrets);
         assert!(!passed);
     }
 }
