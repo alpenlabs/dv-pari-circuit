@@ -270,8 +270,8 @@ fn get_fs_challenge<T: Circuit>(
     let public_inputs_hash = {
         let mut buf = Vec::new();
         for pubin in public_inputs {
-            let mut pubin_240 = [bld.zero(); 224];
-            pubin_240.copy_from_slice(&pubin[0..224]);
+            let mut pubin_240 = [bld.zero(); FR_LEN];
+            pubin_240.copy_from_slice(&pubin[0..FR_LEN]);
             let mut r: Vec<[usize; 8]> = pubin_240
                 .chunks(8)
                 .map(|x| {
