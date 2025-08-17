@@ -220,14 +220,14 @@ pub(crate) fn emit_xsk233_decode<T: Circuit>(
     let g = emit_gf_add(bld, &g, &w);
     let g = emit_gf_mul(bld, &g, &x);
     let g_tr = emit_gf_trace(bld, &g);
-    let masked_a = {
+    let masked_d = {
         let mut tmp = [0; GF_LEN];
         for i in 0..GF_LEN {
-            tmp[i] = bld.and_wire(x[i], g_tr);
+            tmp[i] = bld.and_wire(d[i], g_tr);
         }
         tmp
     };
-    let x = emit_gf_add(bld, &d, &masked_a);
+    let x = emit_gf_add(bld, &x, &masked_d);
 
     let s = emit_gf_square(bld, &w);
     let s = emit_gf_mul(bld, &s, &x);
