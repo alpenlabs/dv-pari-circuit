@@ -6,7 +6,11 @@ use std::str::FromStr;
 use num_traits::{FromPrimitive, Num};
 
 use crate::{
-    curve_ckt::CompressedCurvePointRef, curve_ref::{point_add, point_equals, point_scalar_multiplication, CurvePointRef}, dv_ckt::{ProofRef, RawPublicInputsRef, TrapdoorRef}, fr_ckt::FR_LEN, fr_ref::FrRef
+    curve_ckt::CompressedCurvePointRef,
+    curve_ref::{CurvePointRef, point_add, point_equals, point_scalar_multiplication},
+    dv_ckt::{ProofRef, RawPublicInputsRef, TrapdoorRef},
+    fr_ckt::FR_LEN,
+    fr_ref::FrRef,
 };
 
 pub(crate) fn get_fs_challenge(
@@ -21,7 +25,7 @@ pub(crate) fn get_fs_challenge(
         let mut buf = Vec::new();
         for pubin in public_inputs {
             let mut bytes = pubin.to_bytes_le();
-            bytes.resize(FR_LEN/8, 0);
+            bytes.resize(FR_LEN / 8, 0);
             buf.append(&mut bytes);
         }
         blake3::hash(&buf)
