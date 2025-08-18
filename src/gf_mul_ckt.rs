@@ -28,6 +28,7 @@ fn representatives() -> Vec<usize> {
     reps
 }
 
+#[allow(clippy::manual_is_multiple_of)]
 fn extend_domain(rep: &[usize], xs: &[u16]) -> Vec<u16> {
     let mut exts = Vec::with_capacity(511);
     assert_eq!(rep.len() + 1, xs.len());
@@ -35,7 +36,7 @@ fn extend_domain(rep: &[usize], xs: &[u16]) -> Vec<u16> {
     exts.push(1);
     for i in 1..xs.len() {
         let mut t = xs[i];
-        let rounds = if rep[i - 1].is_multiple_of(73) { 3 } else { 9 };
+        let rounds = if rep[i - 1] % 73 == 0 { 3 } else { 9 };
         for _ in 0..rounds {
             exts.push(t);
             t = gf9ref_mul(t, t);
@@ -57,6 +58,7 @@ fn domain(reps: &[usize]) -> Vec<u16> {
     xs
 }
 
+#[allow(clippy::manual_is_multiple_of)]
 /// Evaluation over the represetative domain
 fn extend_evaluation<T: Circuit>(
     bld: &mut T,
@@ -70,7 +72,7 @@ fn extend_evaluation<T: Circuit>(
 
     for i in 1..rep_evs.len() {
         let mut t = rep_evs[i];
-        let rounds = if reps[i - 1].is_multiple_of(73) { 3 } else { 9 };
+        let rounds = if reps[i - 1] % 73 == 0 { 3 } else { 9 };
         for _ in 0..rounds {
             ys.push(t);
             t = emit_gf9_square(bld, t);
