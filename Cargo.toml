@@ -2,16 +2,13 @@
 name = "dv-pari-circuit" 
 version = "0.1.0" 
 edition = "2024" 
-authors = [
-  "John Doe <noreply@alpenlabs.io>",  # CHANGEME
-  "Janet Doe <noreply@alpenlabs.io>", # CHANGEME
-]
+authors = []
 description = "Binary circuit generator for DV-Pari verifier" 
-license = "MIT OR Apache-2.0" # CHANGEME
+license = "MIT OR Apache-2.0" 
 readme = "README.md"
-repository = "https://github.com/alpenlabs/rust-template" # CHANGEME
-categories = ["cryptography::cryptocurrencies"] # CHANGEME
-keywords = ["crypto", "bitcoin"] # CHANGEME
+repository = "https://github.com/alpenlabs/dv-pari-circuit" 
+categories = ["cryptography::cryptocurrencies"] 
+keywords = ["crypto", "bitcoin", "glock"] 
 
 [lints]
 rust.missing_debug_implementations = "warn"
