@@ -76,8 +76,7 @@ pub(crate) fn get_pub_hash_from_raw_pub_inputs(raw_pub_in: &RawPublicInputsRef) 
         result
     }
 
-    let inps = raw_pub_in.deposit_index.to_le_bytes().to_vec();
-    let out_hash = blake3::hash(&inps);
+    let out_hash = blake3::hash(&raw_pub_in.deposit_index);
     babybear_bytes_to_sect_fr(&out_hash.into())
 }
 
@@ -202,9 +201,9 @@ mod test {
             .unwrap(),
         };
 
-        let raw_public_inputs = 2838366633794829684;
+        let raw_public_inputs: u64 = 2838366633794829684;
         let rpin = RawPublicInputsRef {
-            deposit_index: raw_public_inputs,
+            deposit_index: raw_public_inputs.to_le_bytes().to_vec(),
         };
         const SP1_VK: &str =
             "3211415145189105019978395454939297393438090639215215871422959911100063";
@@ -254,7 +253,7 @@ mod test {
         };
         proof.commit_p[29] = 7; // curve point decoding will fail irrespective of proof validity
 
-        let raw_public_inputs = u64::from_le_bytes([55, 0, 0, 0, 89, 0, 0, 0]);
+        let raw_public_inputs = vec![55, 0, 0, 0, 89, 0, 0, 0];
         let rpin = RawPublicInputsRef {
             deposit_index: raw_public_inputs,
         };

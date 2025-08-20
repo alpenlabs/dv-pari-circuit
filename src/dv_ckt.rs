@@ -17,8 +17,6 @@ use crate::{
     fr_ref::{FrRef, frref_to_bits},
 };
 
-const PUBLIC_INPUT_LEN: usize = 64;
-
 #[derive(Debug)]
 /// VerifierPayloadRef
 pub struct VerifierPayloadRef {
@@ -44,7 +42,6 @@ pub struct ProofRef {
 }
 
 const PROOF_BIT_LEN: usize = 944;
-const PUBINP_BIT_LEN: usize = 64;
 const TRAPDOOR_BIT_LEN: usize = 696;
 
 impl ProofRef {
@@ -80,16 +77,14 @@ impl ProofRef {
 #[derive(Debug)]
 pub struct RawPublicInputsRef {
     /// deposit_index
-    pub deposit_index: u64,
+    pub deposit_index: Vec<u8>,
 }
 
 impl RawPublicInputsRef {
     // deposit_index is 64 bits
     /// Serialize RawPublicInputsRef
-    pub fn to_bits(&self) -> [bool; PUBINP_BIT_LEN] {
-        let deposit_index = u64_to_bits_le(self.deposit_index).to_vec();
-        let deposit_index: [bool; 64] = deposit_index.try_into().unwrap();
-        deposit_index
+    pub fn to_bits(&self) -> Vec<bool> {
+        byte_arr_to_bits_le(&self.deposit_index)
     }
 }
 
@@ -121,9 +116,13 @@ impl TrapdoorRef {
     }
 }
 
-fn u64_to_bits_le(n: u64) -> [bool; 64] {
-    let v: Vec<bool> = (0..64).map(|i| (n >> i) & 1 != 0).collect();
-    v.try_into().unwrap()
+fn byte_arr_to_bits_le(le_bytes: &[u8]) -> Vec<bool> {
+    let mut vbool = Vec::with_capacity(le_bytes.len() * 8);
+    for le_byte in le_bytes {
+        let mut v: Vec<bool> = (0..8).map(|i| (le_byte >> i) & 1 != 0).collect();
+        vbool.append(&mut v);
+    }
+    vbool
 }
 
 fn u8_to_bits_le(n: u8) -> [bool; 8] {
@@ -132,14 +131,17 @@ fn u8_to_bits_le(n: u8) -> [bool; 8] {
 }
 
 impl VerifierPayloadRef {
-    fn get_labels(bld: &mut CktBuilder) -> (Proof, RawPublicInputs, Trapdoor) {
+    fn get_labels(
+        bld: &mut CktBuilder,
+        raw_pub_input_len: usize,
+    ) -> (Proof, RawPublicInputs, Trapdoor) {
         let secrets = Trapdoor {
             tau: bld.fresh(),
             delta: bld.fresh(),
             epsilon: bld.fresh(),
         };
         let rpin = RawPublicInputs {
-            deposit_index: bld.fresh(),
+            deposit_index: (0..raw_pub_input_len).map(|_| bld.fresh_one()).collect(),
         };
         let commit_p = {
             let r: [usize; 240] = bld.fresh();
@@ -175,7 +177,7 @@ impl VerifierPayloadRef {
     }
 
     /// Serialize VerifierPayloadRef
-    pub fn to_bits(&self) -> [bool; PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN] {
+    pub fn to_bits<const PUBINP_BIT_LEN: usize>(&self) -> Vec<bool> {
         let mut secret_bits = self.trapdoor.to_bits().to_vec();
         let mut deposit_index_bits = self.public_input.to_bits().to_vec();
         let mut proof_bits = self.proof.to_bits().to_vec();
@@ -186,8 +188,10 @@ impl VerifierPayloadRef {
         witness.append(&mut deposit_index_bits);
         witness.append(&mut proof_bits);
 
-        let witness: [bool; PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN] =
-            witness.try_into().unwrap();
+        assert_eq!(
+            witness.len(),
+            PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN
+        );
         witness
     }
 }
@@ -209,7 +213,7 @@ pub struct Proof {
 #[derive(Debug)]
 pub struct RawPublicInputs {
     /// deposit_index
-    pub deposit_index: [usize; PUBLIC_INPUT_LEN],
+    pub deposit_index: Vec<usize>,
 }
 
 /// Trapdoor
@@ -353,11 +357,11 @@ fn const_biguint_to_labels<T: Circuit>(bld: &mut T, num: FrRef) -> Fr {
 }
 
 /// Function to compile dvsnark verifier circuit
-pub fn compile_verifier(sp1_vk: &str) -> (CktBuilder, LabelInfo) {
+pub fn compile_verifier<const PUBINP_BIT_LEN: usize>(sp1_vk: &str) -> (CktBuilder, LabelInfo) {
     let mut bld = CktBuilder::default();
 
     let input_wire_start = bld.next_wire();
-    let (proof, rpin, secrets) = VerifierPayloadRef::get_labels(&mut bld);
+    let (proof, rpin, secrets) = VerifierPayloadRef::get_labels(&mut bld, PUBINP_BIT_LEN);
     let input_wire_end = bld.next_wire();
 
     // Prepare
@@ -372,9 +376,16 @@ pub fn compile_verifier(sp1_vk: &str) -> (CktBuilder, LabelInfo) {
 }
 
 /// evaluate verifier
-pub fn evaluate_verifier(bld: &mut CktBuilder, witness: [bool; 1704], output_label: usize) -> bool {
-    let wires = bld.eval_gates(&witness);
-
+pub fn evaluate_verifier<const PUBINP_BIT_LEN: usize>(
+    bld: &mut CktBuilder,
+    witness: &[bool],
+    output_label: usize,
+) -> bool {
+    assert_eq!(
+        witness.len(),
+        PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN
+    );
+    let wires = bld.eval_gates(witness);
     wires[output_label]
 }
 
@@ -461,8 +472,8 @@ mod test {
     use crate::{
         builder::{Circuit, CktBuilder},
         dv_ckt::{
-            PUBLIC_INPUT_LEN, ProofRef, RawPublicInputsRef, TrapdoorRef, VerifierPayloadRef,
-            compile_verifier, evaluate_verifier, u8_to_bits_le, u64_to_bits_le,
+            ProofRef, RawPublicInputsRef, TrapdoorRef, VerifierPayloadRef, byte_arr_to_bits_le,
+            compile_verifier, evaluate_verifier, u8_to_bits_le,
         },
         dv_ref::{self},
         fr_ckt::Fr,
@@ -474,9 +485,10 @@ mod test {
     #[test]
     #[ignore] // ignore because of being long running
     fn test_verify_over_mock_inputs() {
+        const PUBLIC_INPUT_LEN: usize = 64; // 64 byte deposit index
         const SP1_VK_BLAKE3_FIBO: &str =
             "3211415145189105019978395454939297393438090639215215871422959911100063";
-        let (mut bld, label_info) = compile_verifier(SP1_VK_BLAKE3_FIBO);
+        let (mut bld, label_info) = compile_verifier::<PUBLIC_INPUT_LEN>(SP1_VK_BLAKE3_FIBO);
 
         // Prepare VerifierPayloadRef
         let tau: FrRef = BigUint::from_str(
@@ -491,7 +503,7 @@ mod test {
             "1154785560216858119874588837659951154401760642599649999302917233356517",
         )
         .unwrap();
-        let deposit_index = 2838366633794829684;
+        let deposit_index: u64 = 2838366633794829684;
         let commit_p: [u8; 30] = [
             145, 195, 86, 210, 230, 219, 176, 179, 148, 236, 194, 133, 166, 240, 60, 111, 152, 154,
             62, 190, 248, 224, 197, 250, 131, 57, 145, 237, 213, 0,
@@ -516,28 +528,32 @@ mod test {
                 a0,
                 b0,
             },
-            public_input: RawPublicInputsRef { deposit_index },
+            public_input: RawPublicInputsRef {
+                deposit_index: deposit_index.to_le_bytes().to_vec(),
+            },
             trapdoor: TrapdoorRef {
                 tau,
                 delta,
                 epsilon,
             },
         };
-        let witness = verifier_payload.to_bits();
+        let witness = verifier_payload.to_bits::<PUBLIC_INPUT_LEN>();
 
         bld.show_gate_counts();
 
         println!("label_info {:?}", label_info);
-        let passed_val = evaluate_verifier(&mut bld, witness, label_info.output_label);
+        let passed_val =
+            evaluate_verifier::<PUBLIC_INPUT_LEN>(&mut bld, &witness, label_info.output_label);
         assert!(passed_val, "verification failed");
     }
 
     #[test]
     #[ignore] // ignore because of being long running
     fn test_invalid_proof_over_mock_inputs() {
+        const PUBLIC_INPUT_LEN: usize = 64; // 64 byte deposit index
         const SP1_VK_BLAKE3_FIBO: &str =
             "3211415145189105019978395454939297393438090639215215871422959911100063";
-        let (mut bld, label_info) = compile_verifier(SP1_VK_BLAKE3_FIBO);
+        let (mut bld, label_info) = compile_verifier::<PUBLIC_INPUT_LEN>(SP1_VK_BLAKE3_FIBO);
 
         // Prepare VerifierPayloadRef
         let tau: FrRef = BigUint::from_str(
@@ -552,7 +568,7 @@ mod test {
             "1154785560216858119874588837659951154401760642599649999302917233356517",
         )
         .unwrap();
-        let deposit_index = 2838366633794829684;
+        let deposit_index: u64 = 2838366633794829684;
         let commit_p: [u8; 30] = [
             145, 195, 86, 210, 230, 219, 176, 179, 148, 236, 194, 133, 166, 240, 60, 111, 152, 154,
             62, 190, 248, 224, 197, 250, 131, 57, 145, 237, 213, 7,
@@ -577,36 +593,39 @@ mod test {
                 a0,
                 b0,
             },
-            public_input: RawPublicInputsRef { deposit_index },
+            public_input: RawPublicInputsRef {
+                deposit_index: deposit_index.to_le_bytes().to_vec(),
+            },
             trapdoor: TrapdoorRef {
                 tau,
                 delta,
                 epsilon,
             },
         };
-        let witness = verifier_payload.to_bits();
+        let witness = verifier_payload.to_bits::<PUBLIC_INPUT_LEN>();
 
         bld.show_gate_counts();
 
         println!("label_info {:?}", label_info);
-        let passed_val = evaluate_verifier(&mut bld, witness, label_info.output_label);
+        let passed_val =
+            evaluate_verifier::<PUBLIC_INPUT_LEN>(&mut bld, &witness, label_info.output_label);
         assert!(!passed_val, "verification should have failed but passed");
     }
 
     #[test]
     fn test_get_pub_hash_from_raw_pub_inputs() {
         let mut bld = CktBuilder::default();
-
+        const PUBLIC_INPUT_LEN: usize = 64; // 64 byte deposit index
         let deposit_index_labels: [usize; PUBLIC_INPUT_LEN] = bld.fresh();
         let raw_pub_in = &RawPublicInputs {
-            deposit_index: deposit_index_labels,
+            deposit_index: deposit_index_labels.to_vec(),
         };
         let out_labels = get_pub_hash_from_raw_pub_inputs(&mut bld, raw_pub_in);
 
         bld.show_gate_counts();
 
-        let deposit_index_raw_bytes = u64::from_le_bytes([55, 0, 0, 0, 89, 0, 0, 0]);
-        let deposit_index = u64_to_bits_le(deposit_index_raw_bytes).to_vec();
+        let deposit_index_raw_bytes = vec![55, 0, 0, 0, 89, 0, 0, 0];
+        let deposit_index = byte_arr_to_bits_le(&deposit_index_raw_bytes).to_vec();
         let wires = bld.eval_gates(&deposit_index);
 
         let out_val: BigUint = out_labels
@@ -617,7 +636,7 @@ mod test {
             });
 
         let out_val_ref = dv_ref::get_pub_hash_from_raw_pub_inputs(&RawPublicInputsRef {
-            deposit_index: u64::from_le_bytes([55, 0, 0, 0, 89, 0, 0, 0]),
+            deposit_index: deposit_index_raw_bytes,
         });
         assert_eq!(out_val, out_val_ref);
     }
