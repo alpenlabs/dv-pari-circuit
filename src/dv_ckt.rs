@@ -357,11 +357,11 @@ fn const_biguint_to_labels<T: Circuit>(bld: &mut T, num: FrRef) -> Fr {
 }
 
 /// Function to compile dvsnark verifier circuit
-pub fn compile_verifier<const PUBINP_BIT_LEN: usize>(sp1_vk: &str) -> (CktBuilder, LabelInfo) {
+pub fn compile_verifier(sp1_vk: &str, raw_pub_input_len: usize) -> (CktBuilder, LabelInfo) {
     let mut bld = CktBuilder::default();
 
     let input_wire_start = bld.next_wire();
-    let (proof, rpin, secrets) = VerifierPayloadRef::get_labels(&mut bld, PUBINP_BIT_LEN);
+    let (proof, rpin, secrets) = VerifierPayloadRef::get_labels(&mut bld, raw_pub_input_len);
     let input_wire_end = bld.next_wire();
 
     // Prepare
@@ -484,7 +484,7 @@ mod test {
         const PUBLIC_INPUT_LEN: usize = 64; // 64 byte deposit index
         const SP1_VK_BLAKE3_FIBO: &str =
             "3211415145189105019978395454939297393438090639215215871422959911100063";
-        let (mut bld, label_info) = compile_verifier::<PUBLIC_INPUT_LEN>(SP1_VK_BLAKE3_FIBO);
+        let (mut bld, label_info) = compile_verifier(SP1_VK_BLAKE3_FIBO, PUBLIC_INPUT_LEN);
 
         // Prepare VerifierPayloadRef
         let tau: FrRef = BigUint::from_str(
@@ -548,7 +548,7 @@ mod test {
         const PUBLIC_INPUT_LEN: usize = 64; // 64 byte deposit index
         const SP1_VK_BLAKE3_FIBO: &str =
             "3211415145189105019978395454939297393438090639215215871422959911100063";
-        let (mut bld, label_info) = compile_verifier::<PUBLIC_INPUT_LEN>(SP1_VK_BLAKE3_FIBO);
+        let (mut bld, label_info) = compile_verifier(SP1_VK_BLAKE3_FIBO, PUBLIC_INPUT_LEN);
 
         // Prepare VerifierPayloadRef
         let tau: FrRef = BigUint::from_str(
