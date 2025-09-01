@@ -29,6 +29,7 @@ clippy.too_long_first_doc_paragraph = "warn"
 num-bigint = { version = "0.4.4", features = ["rand"] }
 mcircuit = "0.1.10"
 rayon = "1.10.0"
+ckt = { git = "https://github.com/alpenlabs/ckt" }
 
 [dev-dependencies]
 xs233-sys = "=0.2.0"

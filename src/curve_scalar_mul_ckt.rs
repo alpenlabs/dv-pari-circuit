@@ -662,7 +662,7 @@ pub(crate) mod point_scalar_mul {
             let st = st.elapsed();
             println!("emit_mul_windowed_tau took {} seconds", st.as_secs());
 
-            // bld.write_bristol_periodic("psm4.bristol").unwrap(); // uncomment if you want to dump to bristol file
+            bld.export_to_file("psm.azz").unwrap(); // uncomment if you want to dump to bristol file
 
             bld.show_gate_counts();
 

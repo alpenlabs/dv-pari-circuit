@@ -1,6 +1,8 @@
 //! Module provides a way to build binary circuits
 use std::collections::HashMap;
 
+use ckt::CompactGate;
+use ckt::writer::CircuitWriter;
 use mcircuit::Operation;
 use mcircuit::exporters::bool_circuit_to_bristol;
 use rayon::iter::{
@@ -453,6 +455,7 @@ impl CktBuilder {
     /// Dump gates to bristol format
     // Iterate through gates, unroll custom gates when needed,
     // and write them to file in bristol format
+    #[deprecated]
     pub fn write_bristol_periodic(&mut self, path: &str) -> io::Result<()> {
         const CHUNK_GATES: usize = 10_000; // how many gates to render at once
         const FLUSH_EVERY: usize = 4 << 20; // flush after ~4 MiB have been written
@@ -508,6 +511,61 @@ impl CktBuilder {
         }
 
         writer.flush()?; // final flush
+        Ok(())
+    }
+
+    /// Exports binarcy circuit in custom format
+    pub fn export_to_file(&mut self, path: &str) -> io::Result<()> {
+        let gates = &self.gates;
+        let zero_gate = self.zero;
+        let one_gate = self.one;
+
+        let file = File::create(path)?;
+        let mut writer = CircuitWriter::new(file).unwrap();
+
+        for gate in gates {
+            let inner_gates = match gate {
+                GateOperation::Base(g) => {
+                    vec![*g]
+                }
+                GateOperation::Custom(params) => {
+                    let custom_gate_template = match params.gate_type {
+                        CustomGateType::PointAdd => {
+                            self.templates.ptadd_template.as_ref().unwrap() // assumed it exists
+                        }
+                    };
+
+                    custom_gate_template.unroll_custom_gate(
+                        zero_gate,
+                        one_gate,
+                        params.internal_wire_label_start_index,
+                        &params.input_wire_labels,
+                    )
+                }
+            };
+
+            inner_gates.iter().for_each(|op| match *op {
+                Operation::Add(o, a, b) => {
+                    writer
+                        .write_gate(
+                            CompactGate::new(a as u32, b as u32, o as u32),
+                            ckt::GateType::XOR,
+                        )
+                        .unwrap();
+                }
+                Operation::Mul(o, a, b) => {
+                    writer
+                        .write_gate(
+                            CompactGate::new(a as u32, b as u32, o as u32),
+                            ckt::GateType::AND,
+                        )
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            });
+        }
+        let (_, total_written) = writer.finish().unwrap();
+        println!("finished export_to_file; written {:?} bytes", total_written);
         Ok(())
     }
 
