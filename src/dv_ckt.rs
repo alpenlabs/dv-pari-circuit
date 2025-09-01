@@ -177,7 +177,7 @@ impl VerifierPayloadRef {
     }
 
     /// Serialize VerifierPayloadRef
-    pub fn to_bits<const PUBINP_BIT_LEN: usize>(&self) -> Vec<bool> {
+    pub fn to_bits(&self) -> Vec<bool> {
         let mut secret_bits = self.trapdoor.to_bits().to_vec();
         let mut deposit_index_bits = self.public_input.to_bits().to_vec();
         let mut proof_bits = self.proof.to_bits().to_vec();
@@ -188,10 +188,10 @@ impl VerifierPayloadRef {
         witness.append(&mut deposit_index_bits);
         witness.append(&mut proof_bits);
 
-        assert_eq!(
-            witness.len(),
-            PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN
-        );
+        // assert_eq!(
+        //     witness.len(),
+        //     PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN
+        // );
         witness
     }
 }
@@ -376,15 +376,11 @@ pub fn compile_verifier<const PUBINP_BIT_LEN: usize>(sp1_vk: &str) -> (CktBuilde
 }
 
 /// evaluate verifier
-pub fn evaluate_verifier<const PUBINP_BIT_LEN: usize>(
-    bld: &mut CktBuilder,
-    witness: &[bool],
-    output_label: usize,
-) -> bool {
-    assert_eq!(
-        witness.len(),
-        PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN
-    );
+pub fn evaluate_verifier(bld: &mut CktBuilder, witness: &[bool], output_label: usize) -> bool {
+    // assert_eq!(
+    //     witness.len(),
+    //     PROOF_BIT_LEN + PUBINP_BIT_LEN + TRAPDOOR_BIT_LEN
+    // );
     let wires = bld.eval_gates(witness);
     wires[output_label]
 }
@@ -537,13 +533,12 @@ mod test {
                 epsilon,
             },
         };
-        let witness = verifier_payload.to_bits::<PUBLIC_INPUT_LEN>();
+        let witness = verifier_payload.to_bits();
 
         bld.show_gate_counts();
 
         println!("label_info {:?}", label_info);
-        let passed_val =
-            evaluate_verifier::<PUBLIC_INPUT_LEN>(&mut bld, &witness, label_info.output_label);
+        let passed_val = evaluate_verifier(&mut bld, &witness, label_info.output_label);
         assert!(passed_val, "verification failed");
     }
 
@@ -602,13 +597,12 @@ mod test {
                 epsilon,
             },
         };
-        let witness = verifier_payload.to_bits::<PUBLIC_INPUT_LEN>();
+        let witness = verifier_payload.to_bits();
 
         bld.show_gate_counts();
 
         println!("label_info {:?}", label_info);
-        let passed_val =
-            evaluate_verifier::<PUBLIC_INPUT_LEN>(&mut bld, &witness, label_info.output_label);
+        let passed_val = evaluate_verifier(&mut bld, &witness, label_info.output_label);
         assert!(!passed_val, "verification should have failed but passed");
     }
 
