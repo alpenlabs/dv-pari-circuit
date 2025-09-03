@@ -527,6 +527,9 @@ mod test {
 
         bld.show_gate_counts();
 
+        // write the circuit to a bristol file
+        bld.write_bristol_periodic("dv.bristol").unwrap();
+
         println!("label_info {:?}", label_info);
         let passed_val = evaluate_verifier(&mut bld, witness, label_info.output_label);
         assert!(passed_val, "verification failed");
