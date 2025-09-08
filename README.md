@@ -21,7 +21,7 @@ User operations:
 To generate the circuit, run the following:
 
 ```bash
-cargo test --release --package dv-pari-circuit --lib -- dv_ckt::test::test_verify_over_mock_inputs --exact --show-output --ignored
+cargo test --release --package dv-pari-circuit --lib -- dv_ckt::test::gen_dv_circuit --exact --show-output --ignored
 ```
 
 Compilation and evaluation currently takes around 13 minutes with 9 GB of peak memory.
