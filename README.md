@@ -19,4 +19,4 @@ User operations:
 
 Compilation and evaluation currently takes around 13 minutes with 9 GB of peak memory.
 
-Check out [docs](../dv-pari-circuit/docs/) for more.
+Check out [docs](https://github.com/alpenlabs/dv-pari-circuit/tree/main/docs) for more.
