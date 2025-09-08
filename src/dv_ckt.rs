@@ -472,6 +472,17 @@ mod test {
     use super::{RawPublicInputs, get_fs_challenge, get_pub_hash_from_raw_pub_inputs};
 
     #[test]
+    #[ignore] // ignore because of being long running and generates a large file
+    fn gen_dv_circuit() {
+        const SP1_VK_BLAKE3_FIBO: &str =
+            "3211415145189105019978395454939297393438090639215215871422959911100063";
+        let (mut bld, _label_info) = compile_verifier(SP1_VK_BLAKE3_FIBO);
+
+        // write the circuit to a bristol file
+        bld.write_bristol_periodic("dv.bristol").unwrap();
+    }
+
+    #[test]
     #[ignore] // ignore because of being long running
     fn test_verify_over_mock_inputs() {
         const SP1_VK_BLAKE3_FIBO: &str =
@@ -526,9 +537,6 @@ mod test {
         let witness = verifier_payload.to_bits();
 
         bld.show_gate_counts();
-
-        // write the circuit to a bristol file
-        bld.write_bristol_periodic("dv.bristol").unwrap();
 
         println!("label_info {:?}", label_info);
         let passed_val = evaluate_verifier(&mut bld, witness, label_info.output_label);
@@ -591,7 +599,7 @@ mod test {
 
         bld.show_gate_counts();
 
-        println!("label_info {:?}", label_info);
+        println!("label_info {label_info:?}");
         let passed_val = evaluate_verifier(&mut bld, witness, label_info.output_label);
         assert!(!passed_val, "verification should have failed but passed");
     }
