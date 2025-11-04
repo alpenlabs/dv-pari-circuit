@@ -23,20 +23,3 @@ To generate the circuit, run the following:
 ```bash
 cargo test --release --package dv-pari-circuit --lib -- dv_ckt::test::gen_dv_circuit --exact --show-output --ignored
 ```
-
-Compilation and evaluation currently takes around 13 minutes with 9 GB of peak memory.
-
-## Details of the Circuit
-
-- SHA256 hash: 2b290772ddce07a2503571df147ef88755b6db417c59197b5b8846248ffaab7a
-- Total Gates: 3284035290
-- AND Gates: 11337170
-- XOR Gates: 3272698120
-- Total wires: 3286566319
-- Primary inputs: 1706
-- Intermediate wires: 3283320345
-- Primary outputs: 714945
-- Important Output Wire: 3284036995
-- Missing/unused wires: 0
-
-Check out [docs](docs/) for more.
